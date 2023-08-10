@@ -29,8 +29,10 @@ class SettingsService extends BaseService {
                 settings.logLevel = InitialSettings.logLevel;
                 settings.pageSize = InitialSettings.pageSize;
                 settings.serverURL = Config.SERVER_URL;
+                settings.hipBaseURL = Config.HIP_BASE_URL;
                 settings.poolId = "";
                 settings.clientId = Config.CLIENT_ID || "";
+
             }
 
             if (EnvironmentConfig.isDevMode()) {
@@ -57,6 +59,10 @@ class SettingsService extends BaseService {
         const settings = this.findAll(Settings.schema.name);
         if (settings === undefined || settings.length === 0) return undefined;
         return settings[0];
+    }
+
+    getHipBaseURL() {
+        return Config.HIP_BASE_URL;
     }
 
     saveOrUpdate(entity) {

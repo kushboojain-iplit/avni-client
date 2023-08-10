@@ -101,6 +101,28 @@ class AddressLevels extends AbstractComponent {
         }
     }
 
+    UNSAFE_componentWillReceiveProps(props){
+        if (props.addressLevelState && props.multiSelect) {
+            if (props.addressLevelState.selectedAddresses.length > 0) {
+                const onLowest = !_.isEmpty(props.addressLevelState.lowestSelectedAddresses)
+                    && this.addressLevelService.isOnLowestLevel(props.addressLevelState.lowestSelectedAddresses);
+                this.setState({
+                    data: props.addressLevelState,
+                    onLowest: onLowest
+                });
+                return;
+            }
+            this.setState(this.onLoad());
+        } else {
+            this.setState({data: new AddressLevelsState()}, () => {
+                const selectedLowestLevel = props.selectedLowestLevel;
+                const exists = !_.isEmpty(selectedLowestLevel) && !_.isEmpty(selectedLowestLevel.uuid);
+                const newState = this.onLoad(exists ? selectedLowestLevel : undefined);
+                this.setState(newState);
+            });
+        }
+    }
+
     _invokeCallbacks(oldState, newState) {
         if (_.isFunction(this.props.onSelect)) {
             this.props.onSelect(newState.data);

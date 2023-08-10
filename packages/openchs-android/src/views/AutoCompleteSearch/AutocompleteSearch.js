@@ -6,6 +6,7 @@ import get from 'lodash/get';
 import Icon from 'react-native-vector-icons/MaterialCommunityIcons';
 import Colors from "../primitives/Colors";
 import AbstractComponent from "../../framework/view/AbstractComponent";
+import ValidationErrorMessage from '../form/ValidationErrorMessage';
 
 if (UIManager.setLayoutAnimationEnabledExperimental) {
     UIManager.setLayoutAnimationEnabledExperimental(true);
@@ -33,6 +34,7 @@ export default class AutocompleteSearch extends AbstractComponent {
         uniqueKey: PropTypes.string,
         displayKey: PropTypes.string,
         isMulti: PropTypes.bool,
+        validationError: PropTypes.object,
     };
 
     static defaultProps = {
@@ -185,7 +187,7 @@ export default class AutocompleteSearch extends AbstractComponent {
     };
 
     render() {
-        const {selectedItems, isMulti} = this.props;
+        const {selectedItems, isMulti , validationError} = this.props;
         const {searchTerm} = this.state;
         return (
             <View style={{flexDirection: 'column'}}>
@@ -225,6 +227,9 @@ export default class AutocompleteSearch extends AbstractComponent {
                         {this._displaySelectedItems()}
                     </View>
                 ) : null}
+                 <View style={{backgroundColor: '#ffffff'}}>
+                    <ValidationErrorMessage validationResult={validationError}/>
+                </View>
             </View>
         );
     }

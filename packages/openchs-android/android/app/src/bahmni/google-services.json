@@ -1,0 +1,39 @@
+{
+  "project_info": {
+    "project_number": "656759709581",
+    "project_id": "bahmni-outreach",
+    "storage_bucket": "bahmni-outreach.appspot.com"
+  },
+  "client": [
+    {
+      "client_info": {
+        "mobilesdk_app_id": "1:656759709581:android:9029b2ab19db7b1bbae7c4",
+        "android_client_info": {
+          "package_name": "org.bahmni.openchsclient"
+        }
+      },
+      "oauth_client": [
+        {
+          "client_id": "656759709581-euv1df3apks8e62tbct9i08lplagvse7.apps.googleusercontent.com",
+          "client_type": 3
+        }
+      ],
+      "api_key": [
+        {
+          "current_key": "AIzaSyDwEtR8iDD5NIyCJire_-I53fT6iumPiCk"
+        }
+      ],
+      "services": {
+        "appinvite_service": {
+          "other_platform_oauth_client": [
+            {
+              "client_id": "656759709581-euv1df3apks8e62tbct9i08lplagvse7.apps.googleusercontent.com",
+              "client_type": 3
+            }
+          ]
+        }
+      }
+    }
+  ],
+  "configuration_version": "1"
+}

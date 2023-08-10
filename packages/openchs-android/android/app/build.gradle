@@ -138,6 +138,12 @@ android {
             keyAlias "${System.getenv("KEY_STORE_PREFIX") ?: ""}sakhi"
             keyPassword System.getenv("SAKHI_KEY_PASSWORD")
         }
+        bahmni {
+            storeFile file("${System.getenv("KEY_STORE_PREFIX") ?: ""}bahmni-release-key.keystore")
+            storePassword System.getenv("BAHMNI_KEYSTORE_PASSWORD")
+            keyAlias "${System.getenv("KEY_STORE_PREFIX") ?: ""}bahmni"
+            keyPassword System.getenv("BAHMNI_KEY_PASSWORD")
+        }
     }
     buildTypes {
         release {
@@ -165,6 +171,12 @@ android {
             applicationId "org.sakhi.openchsclient"
             resValue "string", "app_name", "Sakhi 2.0"
             signingConfig signingConfigs.sakhi
+            manifestPlaceholders = [bugsnagAPIKey: System.getenv("OPENCHS_CLIENT_BUGSNAG_API_KEY") ?: "dummy"]
+        }
+        bahmni {
+            applicationId "org.bahmni.openchsclient"
+            resValue "string", "app_name", "Bahmni Outreach"
+            signingConfig signingConfigs.bahmni
             manifestPlaceholders = [bugsnagAPIKey: System.getenv("OPENCHS_CLIENT_BUGSNAG_API_KEY") ?: "dummy"]
         }
     }
@@ -203,6 +215,7 @@ dependencies {
     implementation 'com.android.support:multidex:1.0.3'
     implementation 'androidx.appcompat:appcompat:1.6.1'
     implementation 'androidx.swiperefreshlayout:swiperefreshlayout:1.2.0-alpha01'
+    implementation 'com.github.Bahmni-HWC:abha-create-verify-android:1.15'
 
     // required to avoid crash on Android 12 API 31
     implementation 'androidx.work:work-runtime:2.8.1'

@@ -130,6 +130,7 @@ class PersonRegisterFormView extends AbstractComponent {
                                               syncRegistrationConcept2UUID={subjectType.syncRegistrationConcept2}
                                               allowedSyncConcept1Values={userInfoService.getSyncConcept1Values(subjectType)}
                                               allowedSyncConcept2Values={userInfoService.getSyncConcept2Values(subjectType)}
+                                              abhaResponse={this.state.abhaResponse}
                             />}
                             {!displayTimer &&
                             <WizardButtons

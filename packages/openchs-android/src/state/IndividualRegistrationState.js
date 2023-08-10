@@ -11,7 +11,7 @@ import EntityService from "../service/EntityService";
 import TimerState from "./TimerState";
 
 class IndividualRegistrationState extends AbstractDataEntryState {
-    constructor(validationResults, formElementGroup, wizard, genders, age, ageProvidedInYears, individual, group, isNewEntity, filteredFormElements, individualSubjectType, workLists, timerState) {
+    constructor(validationResults, formElementGroup, wizard, genders, age, ageProvidedInYears, individual, group, isNewEntity, filteredFormElements, individualSubjectType, workLists, timerState, abhaResponse) {
         super(validationResults, formElementGroup, wizard, isNewEntity, filteredFormElements, workLists, timerState, isNewEntity);
         this.genders = genders;
         this.age = age;
@@ -20,6 +20,7 @@ class IndividualRegistrationState extends AbstractDataEntryState {
         this.group = group;
         this.individualSubjectType = individualSubjectType;
         this.household = new HouseholdState(workLists);
+        this.abhaResponse = abhaResponse
     }
 
     getEntity() {
@@ -36,12 +37,12 @@ class IndividualRegistrationState extends AbstractDataEntryState {
         }
     }
 
-    static createLoadState(form, genders, individual, workLists, minLevelTypeUUIDs, saveDrafts, groupAffiliationState, isNewEntity, group) {
+    static createLoadState(form, genders, individual, workLists, minLevelTypeUUIDs, saveDrafts, groupAffiliationState, isNewEntity, group, abhaResponse) {
         const wizard = new Wizard(_.isNil(form) ? 1 : form.numberOfPages + 1, 2);
         const individualRegistrationState = new IndividualRegistrationState([],
             new StaticFormElementGroup(form), wizard, genders, "", true, individual, group, isNewEntity,
             [], individual.subjectType,
-            workLists || new WorkLists(new WorkList(new WorkItem(General.randomUUID(), WorkItem.type.REGISTRATION))), null);
+            workLists || new WorkLists(new WorkList(new WorkItem(General.randomUUID(), WorkItem.type.REGISTRATION))), null, abhaResponse);
         individualRegistrationState.form = form;
         individualRegistrationState.minLevelTypeUUIDs = minLevelTypeUUIDs;
         individualRegistrationState.saveDrafts = saveDrafts;
@@ -64,6 +65,7 @@ class IndividualRegistrationState extends AbstractDataEntryState {
         newState.minLevelTypeUUIDs = this.minLevelTypeUUIDs;
         newState.saveDrafts = this.saveDrafts;
         newState.groupAffiliation = this.groupAffiliation;
+        newState.abhaResponse = this.abhaResponse;
         super.clone(newState);
         return newState;
     }

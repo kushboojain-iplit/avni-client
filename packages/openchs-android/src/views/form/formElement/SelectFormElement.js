@@ -8,6 +8,7 @@ import RadioLabelValue from "../../primitives/RadioLabelValue";
 import FormElementLabelWithDocumentation from "../../common/FormElementLabelWithDocumentation";
 import SelectableItemGroup from "../../primitives/SelectableItemGroup";
 import UserInfoService from "../../../service/UserInfoService";
+import AutocompleteSearch from "../../AutoCompleteSearch/AutocompleteSearch";
 
 class SelectFormElement extends AbstractFormElement {
     static propTypes = {
@@ -48,20 +49,30 @@ class SelectFormElement extends AbstractFormElement {
         return (
             <View style={{flexDirection: 'column', paddingBottom: Distances.ScaledVerticalSpacingBetweenOptionItems}}>
                 <FormElementLabelWithDocumentation element={this.props.element} />
-                <SelectableItemGroup
-                    multiSelect={this.props.multiSelect}
-                    inPairs={true}
-                    onPress={(value) => this.toggleFormElementAnswerSelection(value)}
-                    selectionFn={this.props.isSelected}
-                    labelKey={this.props.element.name}
-                    mandatory={this.props.element.mandatory}
+                {valueLabelPairs.length > 10 ? <AutocompleteSearch
+                    isMulti={this.props.multiSelect}
+                    items={valueLabelPairs}
+                    uniqueKey={"value"}
+                    displayKey={"label"}
+                    onSelectedItemsChange={(value) => {
+                        this.toggleFormElementAnswerSelection(value)
+                    }}
                     validationError={this.props.validationResult}
-                    labelValuePairs={valueLabelPairs}
-                    disabled={disabled}
-                    I18n={this.I18n}
-                    locale={currentLocale}
-                    skipLabel={true}
-                />
+                    selectedItems={this.getSelectedAnswers().map(ans => ans.concept.uuid)} /> :
+                    <SelectableItemGroup
+                        multiSelect={this.props.multiSelect}
+                        inPairs={true}
+                        onPress={(value) => this.toggleFormElementAnswerSelection(value)}
+                        selectionFn={this.props.isSelected}
+                        labelKey={this.props.element.name}
+                        mandatory={this.props.element.mandatory}
+                        validationError={this.props.validationResult}
+                        labelValuePairs={valueLabelPairs}
+                        disabled={disabled}
+                        I18n={this.I18n}
+                        locale={currentLocale}
+                        skipLabel={true}
+                    />}
             </View>);
     }
 

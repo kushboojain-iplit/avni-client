@@ -54,7 +54,7 @@ export class PersonRegisterActions {
             individual.observations.push(...observations);
         }
 
-        const newState = IndividualRegistrationState.createLoadState(form, state.genders, individual, action.workLists, minLevelTypeUUIDs, saveDrafts, groupAffiliationState, isNewEntity, group);
+        const newState = IndividualRegistrationState.createLoadState(form, state.genders, individual, action.workLists, minLevelTypeUUIDs, saveDrafts, groupAffiliationState, isNewEntity, group, action.abhaResponse);
         PersonRegisterActions.setAgeState(newState);
 
         return QuickFormEditingActions.moveToPage(newState, action, context, PersonRegisterActions);

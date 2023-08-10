@@ -1,4 +1,4 @@
-import {ToastAndroid, Vibration, View, ScrollView} from "react-native";
+import {ToastAndroid, Vibration, View, ScrollView, Button, NativeModules} from "react-native";
 import PropTypes from 'prop-types';
 import React from "react";
 import AbstractComponent from "../../framework/view/AbstractComponent";
@@ -30,6 +30,12 @@ import {RejectionMessage} from "../approval/RejectionMessage";
 import SingleSelectMediaFormElement from "../form/formElement/SingleSelectMediaFormElement";
 import StaticFormElement from "../viewmodel/StaticFormElement";
 import EntityService from "../../service/EntityService";
+import AuthService from "../../service/AuthService";
+import SettingsService from "../../service/SettingsService";
+import {DeviceEventEmitter} from 'react-native';
+import { AddressLevel, Gender, getUnderlyingRealmCollection } from "openchs-models";
+import { getJSON } from "../../framework/http/requests";
+const { Module } = NativeModules;
 
 @Path('/personRegister')
 class PersonRegisterView extends AbstractComponent {
@@ -65,8 +71,7 @@ class PersonRegisterView extends AbstractComponent {
         return this.getTitleForGroupSubject() || regName + ' ' || 'REG_DISPLAY-Individual';
     }
 
-    UNSAFE_componentWillMount() {
-        const params = this.props.params;
+    dispatchOnLoad(params, patientInfo) {
         this.dispatchAction(Actions.ON_LOAD,
             {
                 individualUUID: params.individualUUID,
@@ -74,9 +79,48 @@ class PersonRegisterView extends AbstractComponent {
                 workLists: params.workLists,
                 isDraftEntity: params.isDraftEntity,
                 pageNumber: params.pageNumber,
-                taskUuid: params.taskUuid
+                taskUuid: params.taskUuid,
+                abhaResponse: patientInfo
             });
+    }
+
+    UNSAFE_componentWillMount() {
+        const params = this.props.params;
+        let patientInfo;
+        this.dispatchOnLoad(params, null)
+
+        DeviceEventEmitter.addListener('abha_response', (Event) => {
+            if (Event && Event.patientInfo) {
+                try {
+                    patientInfo = JSON.parse(Event.patientInfo);
+                    if (patientInfo) {
+                        this.dispatchOnLoad(params, patientInfo);
+                        this.updateMandatoryFormFields(patientInfo);
+                    }
+                }
+                catch (error) {
+                    console.error('Error parsing event data:', error);
+                }
+            }
+        });
         super.UNSAFE_componentWillMount();
+    }
+
+    updateMandatoryFormFields(patientInfo) {
+        this.dispatchAction(Actions.REGISTRATION_ENTER_DOB, { value: new Date(patientInfo.dateOfBirth) });
+        this.dispatchAction(Actions.REGISTRATION_ENTER_FIRST_NAME, { value: patientInfo.firstName });
+        this.dispatchAction(Actions.REGISTRATION_ENTER_LAST_NAME, { value: patientInfo.lastName });
+
+        const genders = this.getService(EntityService).getAll(Gender.schema.name);
+        const genderList = getUnderlyingRealmCollection(genders);
+        const patientGender = genderList.find(item => item.name === patientInfo.gender);
+        patientGender && this.dispatchAction(Actions.REGISTRATION_ENTER_GENDER, { value: { uuid: patientGender.uuid, name: patientGender.name } });
+
+
+        const addressLevels = this.getService(EntityService).getAll(AddressLevel.schema.name);
+        const addressLevelsList = getUnderlyingRealmCollection(addressLevels);
+        const addressLevel = addressLevelsList.find(item => item.name === (patientInfo.villageTownCity).toUpperCase());
+        addressLevel && this.dispatchAction(Actions.REGISTRATION_ENTER_ADDRESS_LEVEL, { value: addressLevel });
     }
 
     shouldComponentUpdate(nextProps, nextState) {
@@ -99,6 +143,31 @@ class PersonRegisterView extends AbstractComponent {
         saveDraftOn ? onYesPress() : AvniAlert(this.I18n.t('backPressTitle'), this.I18n.t('backPressMessage'), onYesPress, this.I18n);
     }
 
+    async getABHANumbers() {
+        const serverUrl = this.getService(SettingsService).getSettings().serverURL;
+        const patientSubjects = await getJSON(`${serverUrl}/api/subjects?lastModifiedDateTime=2023-02-26T01:30:00.000Z&subjectType=Patient`);
+        return patientSubjects.content.filter(obj => obj.observations["ABHA Number"] != null).map(obj => obj.observations["ABHA Number"]);
+    }
+
+    invokeModule = async () => {
+        const authService = this.context.getService(AuthService);
+        const settings = this.context.getService(SettingsService);
+        const authToken = await authService.getAuthProviderService().getAuthToken()
+        const abhaNumbers = await this.getABHANumbers();
+        Module.invoke(authToken, abhaNumbers, settings.getHipBaseURL());
+    }
+
+    isButtonDisabled = () => {
+        const { individual } = this.state;
+        if (individual?.that?.observations) {
+            const result = individual.that.observations.find(
+                obj => obj.concept?.name === "ABHA Number" && obj.valueJSON?.value
+            );
+            return !!result;
+        }
+        return false;
+    };
+
     render() {
         General.logDebug(this.viewName(), `render`);
         const profilePicFormElement = new StaticFormElement("profilePicture", false, 'Profile-Pics', []);
@@ -117,6 +186,7 @@ class PersonRegisterView extends AbstractComponent {
                         flexDirection: 'column',
                         paddingHorizontal: Distances.ScaledContentDistanceFromEdge
                     }}>
+                     <Button title="Register with ABHA >>" onPress={this.invokeModule} style={{marginBottom: 50}} disabled={this.isButtonDisabled()}/>
                         <GeolocationFormElement
                             actionName={Actions.REGISTRATION_SET_LOCATION}
                             errorActionName={Actions.SET_LOCATION_ERROR}
@@ -148,6 +218,7 @@ class PersonRegisterView extends AbstractComponent {
                         <WizardButtons
                             next={{func: () => PersonRegisterViewsMixin.next(this), label: this.I18n.t('next')}}/>
                     </ScrollView>
+
                 </CHSContent>
             </CHSContainer>
         );
