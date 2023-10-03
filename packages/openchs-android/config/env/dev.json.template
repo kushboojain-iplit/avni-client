@@ -5,6 +5,7 @@
   "goToLastPageOnNext": false,
   "debugFirebaseAnalyticsEvents": false,
   "HIP_BASE_URL": "http://localhost",
-  "PLAYGROUND": false
+  "PLAYGROUND": false,
+  "ESANJEEVANI_SERVICE_URL": "http://localhost/esanjeevani-bridge",
 
 }

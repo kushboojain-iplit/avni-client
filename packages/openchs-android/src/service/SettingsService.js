@@ -30,6 +30,7 @@ class SettingsService extends BaseService {
                 settings.pageSize = InitialSettings.pageSize;
                 settings.serverURL = Config.SERVER_URL;
                 settings.hipBaseURL = Config.HIP_BASE_URL;
+                settings.eSanjeevaniServiceUrl = Config.ESANJEEVANI_SERVICE_URL;
                 settings.poolId = "";
                 settings.clientId = Config.CLIENT_ID || "";
 
@@ -63,6 +64,10 @@ class SettingsService extends BaseService {
 
     getHipBaseURL() {
         return Config.HIP_BASE_URL;
+    }
+
+    getESaneevaniServiceUrl() {
+        return Config.ESANJEEVANI_SERVICE_URL;
     }
 
     saveOrUpdate(entity) {

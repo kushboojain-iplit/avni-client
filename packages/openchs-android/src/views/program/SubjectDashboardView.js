@@ -1,6 +1,6 @@
 import AbstractComponent from "../../framework/view/AbstractComponent";
 import React from 'react';
-import {View, TouchableOpacity, Text, StyleSheet, ToastAndroid, ScrollView} from 'react-native';
+import {View, TouchableOpacity, Text, StyleSheet, ToastAndroid, ScrollView, Button} from 'react-native';
 import SubjectDashboardGeneralTab from "../individual/SubjectDashboardGeneralTab";
 import PropTypes from 'prop-types';
 import Colors from "../primitives/Colors";
@@ -17,6 +17,7 @@ import Fonts from "../primitives/Fonts";
 import {Names as Actions} from "../../action/program/SubjectDashboardViewActions";
 import MCIcon from "react-native-vector-icons/MaterialCommunityIcons";
 import OIcon from "react-native-vector-icons/Octicons";
+import ESanjeevaniLogin from "../individual/ESanjeevaniLogin";
 
 class SubjectDashboardView extends AbstractComponent {
     static propTypes = {
@@ -30,6 +31,9 @@ class SubjectDashboardView extends AbstractComponent {
 
     constructor(props, context) {
         super(props, context, Reducers.reducerKeys.subjectDashboardView);
+        this.state = {
+            showESanjeevaniLogin: false,
+          };
     }
 
     UNSAFE_componentWillMount() {
@@ -86,6 +90,13 @@ class SubjectDashboardView extends AbstractComponent {
         this.displayMessage(this.props.message);
         return (
             <CHSContainer>
+                  {this.state.showESanjeevaniLogin ? ( 
+                    <ESanjeevaniLogin
+                        isVisible={this.state.showESanjeevaniLogin}
+                        onClose={(isVisible) => this.setState({ showESanjeevaniLogin: isVisible })}
+                        individual={this.state.individual}
+                        />
+                  ) : (
                 <CHSContent style={{backgroundColor: Colors.GreyContentBackground}}>
                     <View style={{backgroundColor: Styles.defaultBackground}}>
                         <AppHeader title={this.I18n.t('individualDashboard')} func={this.props.backFunction}/>
@@ -98,8 +109,11 @@ class SubjectDashboardView extends AbstractComponent {
                     </View>
                     <ScrollView>
                         {this.state.individualProfile && (
-                            <SubjectDashboardProfileTab
-                                params={{individualUUID: individualUUID, displayGeneralInfoInProfileTab: this.state.displayGeneralInfoInProfileTab}}/>
+                            <View>
+                                <Button title="E-Sanjeevani Consultation >>" onPress={() => this.setState({ showESanjeevaniLogin: true })} style={{marginBottom: 50}} />
+                                <SubjectDashboardProfileTab
+                                    params={{individualUUID: individualUUID, displayGeneralInfoInProfileTab: this.state.displayGeneralInfoInProfileTab}}/>
+                            </View>
                         )}
                         {this.state.program && (
                             <SubjectDashboardProgramsTab
@@ -109,7 +123,7 @@ class SubjectDashboardView extends AbstractComponent {
                             <SubjectDashboardGeneralTab params={{individualUUID: individualUUID}}/>
                         )}
                     </ScrollView>
-                </CHSContent>
+                </CHSContent>)}
                 {this.state.displayProgramTab &&
                 <View style={styles.tabContainer}>
                     {this.renderOptions(options)}
