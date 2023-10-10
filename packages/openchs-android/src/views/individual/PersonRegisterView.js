@@ -160,10 +160,13 @@ class PersonRegisterView extends AbstractComponent {
     isButtonDisabled = () => {
         const { individual } = this.state;
         if (individual?.that?.observations) {
-            const result = individual.that.observations.find(
+            const isABHANumberExist = individual.that.observations.find(
                 obj => obj.concept?.name === "ABHA Number" && obj.valueJSON?.value
             );
-            return !!result;
+            const isAadhaarNumberExist = individual.that.observations.find(
+                obj => obj.concept?.name === "Aadhaar Number" && obj.valueJSON?.value
+            );
+            return !!isABHANumberExist || !!isAadhaarNumberExist;
         }
         return false;
     };

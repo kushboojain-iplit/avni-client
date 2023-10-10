@@ -215,7 +215,7 @@ dependencies {
     implementation 'com.android.support:multidex:1.0.3'
     implementation 'androidx.appcompat:appcompat:1.6.1'
     implementation 'androidx.swiperefreshlayout:swiperefreshlayout:1.2.0-alpha01'
-    implementation 'com.github.Bahmni-HWC:abha-create-verify-android:1.18'
+    implementation 'com.github.Bahmni-HWC:abha-create-verify-android:1.19'
 
     // required to avoid crash on Android 12 API 31
     implementation 'androidx.work:work-runtime:2.8.1'

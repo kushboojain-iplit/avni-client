@@ -71,7 +71,8 @@ class FormElementGroup extends AbstractComponent {
             "ABHA Address": "abhaAddress",
             "ABHA Number": "abhaNumber",
             "Phone Number": "phoneNumber",
-            "Full Address": "address"
+            "Full Address": "address",
+            "Aadhaar Number": "aadhaarNumber"
         }
         if (this.props.abhaResponse) {
             filteredFormElements
