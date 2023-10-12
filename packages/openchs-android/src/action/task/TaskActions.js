@@ -22,7 +22,7 @@ class TaskActions {
         const taskStatus = context.get(EntityService).findByUUID(action.statusUUID, TaskStatus.schema.name);
         task.setTaskStatus(taskStatus);
         const formMapping = context.get(FormMappingService).getTaskFormMapping(task.taskType);
-        if(!formMapping.form) {
+        if(!_.get(formMapping, "form")) {
             return TaskState.createOnLoadStateForEmptyForm(task, null);
         }
         const form = formMapping.form;
@@ -54,7 +54,7 @@ class TaskActions {
           .map(({name, uuid}) => ({label: name, value: uuid}));
         const newStatus = context.get(EntityService).findByUUID(action.statusUUID, TaskStatus.schema.name);
         const formMapping = context.get(FormMappingService).getTaskFormMapping(newState.task.taskType);
-        if (newStatus.isTerminal && formMapping.uuid) {
+        if (newStatus.isTerminal && _.get(formMapping, "uuid")) {
             action.moveToDetailsPage(newState.task.uuid, newStatus.uuid)
         } else {
             newState.task.setTaskStatus(newStatus);
@@ -75,12 +75,6 @@ class TaskActions {
         const newState = state.clone();
         context.get(TaskService).saveOrUpdate(newState.task);
         action.cb();
-        return newState;
-    }
-
-    static onToggleProgressIndicator(state, action) {
-        const newState = TaskState.createEmptyState();
-        newState.displayProgressIndicator = action.displayProgressIndicator;
         return newState;
     }
 
@@ -115,7 +109,6 @@ const TaskActionNames = {
     PHONE_NUMBER_CHANGE: `${ActionPrefix}.PHONE_NUMBER_CHANGE`,
     GROUP_QUESTION_VALUE_CHANGE: `${ActionPrefix}.GROUP_QUESTION_VALUE_CHANGE`,
     REPEATABLE_GROUP_QUESTION_VALUE_CHANGE: `${ActionPrefix}.REPEATABLE_GROUP_QUESTION_VALUE_CHANGE`,
-    TOGGLE_PROGRESS_INDICATOR: `${ActionPrefix}.TOGGLE_PROGRESS_INDICATOR`
 };
 
 const TaskActionMap = new Map([
@@ -126,7 +119,6 @@ const TaskActionMap = new Map([
     [TaskActionNames.ON_PREVIOUS, TaskActions.onPrevious],
     [TaskActionNames.ON_NEXT, TaskActions.onNext],
     [TaskActionNames.ON_SAVE, TaskActions.onSave],
-    [TaskActionNames.TOGGLE_PROGRESS_INDICATOR, TaskActions.onToggleProgressIndicator],
     [TaskActionNames.TOGGLE_MULTISELECT_ANSWER, ObservationsHolderActions.toggleMultiSelectAnswer],
     [TaskActionNames.TOGGLE_SINGLESELECT_ANSWER, ObservationsHolderActions.toggleSingleSelectAnswer],
     [TaskActionNames.PRIMITIVE_VALUE_CHANGE, ObservationsHolderActions.onPrimitiveObsUpdateValue],

@@ -2,11 +2,11 @@ import StackTrace from 'stacktrace-js';
 import bugsnag from './bugsnag';
 import Config from '../framework/Config';
 import General from "./General";
-import AppConfig from "../framework/AppConfig";
+import EnvironmentConfig from "../framework/EnvironmentConfig";
 
 export default class ErrorHandler {
     static set(errorCallback) {
-        console.log('ErrorHandler', "Setting global error handler", Config.ENV);
+        General.logDebug('ErrorHandler', `Setting global error handler ${Config.ENV}`);
         ErrorUtils.setGlobalHandler((error, isFatal) => {
             ErrorHandler.postError(error, isFatal, errorCallback);
         });
@@ -37,7 +37,7 @@ export default class ErrorHandler {
                 errorCallback(error, JSON.stringify(frameArray));
             });
 
-        if (AppConfig.inNonDevMode()) {
+        if (EnvironmentConfig.inNonDevMode()) {
             bugsnag.notify(error);
         }
     }

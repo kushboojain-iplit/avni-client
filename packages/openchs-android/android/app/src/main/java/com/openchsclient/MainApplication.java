@@ -24,12 +24,14 @@ import com.facebook.react.defaults.DefaultNewArchitectureEntryPoint;
 import com.facebook.react.defaults.DefaultReactNativeHost;
 
 import android.content.Context;
-import com.facebook.react.*;
+import android.util.Log;
 
+import com.facebook.react.*;
 import com.facebook.soloader.SoLoader;
 
 import java.lang.reflect.InvocationTargetException;
 import java.util.List;
+import java.lang.ClassLoader;
 
 public class MainApplication extends Application implements ReactApplication {
 
@@ -43,7 +45,18 @@ public class MainApplication extends Application implements ReactApplication {
         protected List<ReactPackage> getPackages() {
             List<ReactPackage> packages = new PackageList(this).getPackages();
             packages.add(new Packager());
-            return packages;
+            // for some reason, checking for the class in a separate method is throwing ClassNotFoundException,
+            // so moved it here
+            try {
+                Class<?> aClass = Class.forName("com.openchsclient.TamperCheckPackage");
+                ReactPackage tamperCheckPackage = (ReactPackage) aClass.newInstance();
+                if (tamperCheckPackage != null) packages.add(tamperCheckPackage);
+            } catch(Exception e) {
+                Log.i("MainApplication", e.toString());
+            }
+            finally {
+                return packages;
+            }
         }
 
         @Override

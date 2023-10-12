@@ -1,6 +1,8 @@
-import {Duration, Observation, Concept} from 'avni-models';
+import {Concept, Duration, Observation} from 'avni-models';
 import _ from 'lodash';
 import moment from "moment";
+import EnvironmentConfig from "../framework/EnvironmentConfig";
+import Clipboard from '@react-native-community/clipboard';
 
 let currentLogLevel;
 
@@ -67,10 +69,10 @@ class General {
     }
 
     static formatDateTime(date) {
-      const hour = General.toTwoChars(date.getHours());
-      const minutes = General.toTwoChars(date.getMinutes());
+        const hour = General.toTwoChars(date.getHours());
+        const minutes = General.toTwoChars(date.getMinutes());
 
-      return `${General.toTwoChars(date.getDate())}-${General.toTwoChars(date.getMonth() + 1)}-${date.getFullYear()} ${hour}:${minutes}`;
+        return `${General.toTwoChars(date.getDate())}-${General.toTwoChars(date.getMonth() + 1)}-${date.getFullYear()} ${hour}:${minutes}`;
     }
 
     static to12HourDateTimeFormat(dateTime) {
@@ -85,11 +87,11 @@ class General {
         return `${date.getFullYear()}-${General.toTwoChars(date.getMonth() + 1)}-${General.toTwoChars(date.getDate())}`;
     }
 
-    static toISOFormatTime(hour, minute){
-        return moment({hour: hour, minute:minute}).format("HH:mm");
+    static toISOFormatTime(hour, minute) {
+        return moment({hour: hour, minute: minute}).format("HH:mm");
     }
 
-    static toDisplayTime(isoFormatTime){
+    static toDisplayTime(isoFormatTime) {
         const time = this.toTimeObject(isoFormatTime);
         return moment(time).format("LT");
     }
@@ -98,9 +100,9 @@ class General {
         return moment(date).format("HH:mm")
     }
 
-  static toDisplayDateAsTime12H(date) {
-    return moment(date).format("hh:mm a")
-  }
+    static toDisplayDateAsTime12H(date) {
+        return moment(date).format("hh:mm a")
+    }
 
     static toTimeObject(isoFormatTime) {
         const timeArray = _.split(isoFormatTime, ':');
@@ -146,7 +148,7 @@ class General {
     static assignDateFields(dateFields, source, dest) {
         if (!_.isNil(dateFields)) {
             dateFields.forEach((fieldName) => {
-                dest[fieldName] = _.isNil(source[fieldName])? null: new Date(source[fieldName]);
+                dest[fieldName] = _.isNil(source[fieldName]) ? null : new Date(source[fieldName]);
             });
         }
     }
@@ -187,7 +189,7 @@ class General {
 
     static objectsShallowEquals(a: Object, b: Object): Boolean {
         return _.isNil(a) === _.isNil(b)
-            && _.isEmpty(_.xor(_.keys(a),_.keys(b)))
+            && _.isEmpty(_.xor(_.keys(a), _.keys(b)))
             && _.every(_.keys(a), key => a[key] === b[key]);
     }
 
@@ -236,6 +238,8 @@ class General {
     }
 
     static logError(source, error) {
+        if (EnvironmentConfig.inNonDevMode()) return;
+
         if (General.LogLevel.Error >= General.getCurrentLogLevel()) {
             if (error && error.stack) {
                 console["error"](source, `${error && error.message}, ${JSON.stringify(error)}`, error.stack);
@@ -246,11 +250,15 @@ class General {
     }
 
     static logErrorAsInfo(source, error) {
+        if (EnvironmentConfig.inNonDevMode()) return;
+
         if (General.LogLevel.Error >= General.getCurrentLogLevel())
             console.log(`[${source}]`, error.message, JSON.stringify(error));
     }
 
     static log(source, message, level, decorate = false) {
+        if (EnvironmentConfig.inNonDevMode()) return;
+
         try {
             const levelName = `${_.findKey(General.LogLevel, (value) => value === level)}`;
             const logMessage = `[${moment().format("h:mm:ss:SSS")}] [${source}][${levelName}] ${General.getDisplayableMessage(message)}`;
@@ -293,10 +301,10 @@ class General {
     static isEmptyOrBlank(value) {
         return _.overSome([_.isNil, _.isNaN])(value) ? true :
             _.overSome([_.isNumber, _.isBoolean, _.isDate])(value) ? false :
-                    _.isEmpty(value);
+                _.isEmpty(value);
     }
 
-    static dlog(str,...values) {
+    static dlog(str, ...values) {
         console.log(_.pad(str, 40, '-'));
         console.log(...values);
     }
@@ -310,6 +318,31 @@ class General {
     }
 
     static STORAGE_PERMISSIONS_DEPRECATED_API_LEVEL = 33;
+
+    static clearClipboard() {
+        Clipboard.setString('');
+    }
+
+    static isDebugEnabled() {
+        return currentLogLevel === General.LogLevel.Debug;
+    }
+
+    //from https://stackoverflow.com/questions/39085399/lodash-remove-items-recursively
+    static deepOmit(obj, keysToOmit) {
+        const keysToOmitIndex =  _.keyBy(Array.isArray(keysToOmit) ? keysToOmit : [keysToOmit] ); // create an index object of the keys that should be omitted
+
+        function omitFromObject(obj) { // the inner function which will be called recursivley
+            return _.transform(obj, function(result, value, key) { // transform to a new object
+                if (key in keysToOmitIndex) { // if the key is in the index skip it
+                    return;
+                }
+
+                result[key] = _.isObject(value) ? omitFromObject(value) : value; // if the key is an object run it through the inner function - omitFromObject
+            })
+        }
+
+        return omitFromObject(obj); // return the inner function result
+    }
 }
 
 export default General;

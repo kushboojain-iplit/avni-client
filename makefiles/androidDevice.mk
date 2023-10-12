@@ -6,13 +6,13 @@ define _install_apk
 	adb install packages/openchs-android/android/app/build/outputs/apk/release/$1
 endef
 
-uninstall_apk: ##
+uninstall_apk:
 	-adb uninstall ${app_android_package_name}
 
 clear_app_data:
 	-adb shell pm clear ${app_android_package_name}
 
-install_universal_apk: ##
+install_universal_apk:
 	$(call _install_apk,app-release.apk)
 	$(call _start_app)
 
@@ -38,11 +38,19 @@ open_playstore_openchs:
 	$(call _kill_app,com.google.android.gms)
 	adb shell am start -a android.intent.action.VIEW -d 'market://details?id=${app_android_package_name}'
 
+metro_config:
+ifeq ($(flavor), lfe)
+	$(shell cp packages/openchs-android/metro.config.lfe.js packages/openchs-android/metro.config.js)
+else
+	$(shell cp packages/openchs-android/metro.config.generic.js packages/openchs-android/metro.config.js)
+endif
 
 # Run application from the code
 _run_app:
+	make metro_config flavor=$(flavor)
 	cd packages/openchs-android && npx react-native run-android --mode "$(flavor)Debug" --appId "$(app_android_package_name)"
 _run_app_release:
+	make metro_config flavor=$(flavor)
 	cd packages/openchs-android && npx react-native run-android --mode "$(flavor)Release" --appId "$(app_android_package_name)"
 
 run_app: setup_hosts as_dev _run_app
@@ -54,6 +62,7 @@ run_app_staging_dev: as_staging_dev _run_app
 run_app_uat: as_uat _run_app
 run_app_perf: as_perf _run_app
 run_app_prerelease: as_prerelease _run_app
+run_app_prerelease_dev: as_prerelease_dev _run_app
 run_app_prod: as_prod _run_app
 run_app_prod_dev: as_prod_dev _run_app
 
@@ -113,3 +122,6 @@ disable_network:
 enable_network:
 	adb shell "svc wifi enable"
 	adb shell "svc data enable"
+
+reboot_device:
+	adb shell am broadcast -a android.intent.action.BOOT_COMPLETED

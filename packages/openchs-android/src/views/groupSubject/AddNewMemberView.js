@@ -23,6 +23,7 @@ import GenericDashboardView from "../program/GenericDashboardView";
 import AbstractDataEntryState from "../../state/AbstractDataEntryState";
 import ValidationErrorMessage from "../form/ValidationErrorMessage";
 import WorkListState from "../../state/WorkListState";
+import WorklistsFactory from "../../model/WorklistsFactory";
 
 @Path('/addNewMemberView')
 class AddNewMemberView extends AbstractComponent {
@@ -117,34 +118,14 @@ class AddNewMemberView extends AbstractComponent {
         } else {
             const memberSubject = this.state.member.memberSubject;
             if (!_.isEmpty(this.state.validationResults)) {
-                return
+                return;
             }
-            CHSNavigator.navigateToRegisterView(this, {workLists: new WorkLists(new WorkList(`${memberSubject.subjectType.name} `,
-                    [new WorkItem(General.randomUUID(), WorkItem.type.ADD_MEMBER,
-                        {
-                            uuid: memberSubject.uuid,
-                            subjectTypeName: memberSubject.subjectType.name,
-                            member: this.state.member,
-                            individualRelative: this.state.individualRelative,
-                            headOfHousehold: this.isHeadOfHousehold(),
-                            relativeGender: this.state.relativeGender,
-                            groupSubjectUUID: this.state.member.groupSubject.uuid,
-                        }
-                    )]))});
+            CHSNavigator.navigateToRegisterView(this, {workLists: WorklistsFactory.createForAddMemberWizardLastPage(memberSubject, this.state.member, this.state.individualRelative, this.isHeadOfHousehold(), this.state.relativeGender)});
         }
     }
 
     proceedToRegistration(subjectType) {
-        const params = {
-            subjectTypeName: subjectType.name,
-            member: this.state.member,
-            groupSubjectUUID: this.state.member.groupSubject.uuid,
-            individualRelative: this.state.individualRelative,
-            headOfHousehold: this.isHeadOfHousehold(),
-            relativeGender: this.state.relativeGender,
-        };
-
-        const workLists = new WorkLists(new WorkList(subjectType.name).withAddMember(params));
+        const workLists = WorklistsFactory.createForAddMemberStart(subjectType, this.state.member, this.state.individualRelative, this.isHeadOfHousehold(), this.state.relativeGender);
         CHSNavigator.navigateToRegisterView(this, {workLists, groupSubjectUUID: this.state.member.groupSubject.uuid});
     }
 

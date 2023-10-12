@@ -1,5 +1,6 @@
 import BaseService from "./BaseService";
 import Service from "../framework/bean/Service";
+import OrganisationConfigService from "./OrganisationConfigService";
 import RealmFactory from "../framework/db/RealmFactory";
 import fs from "react-native-fs";
 
@@ -17,6 +18,14 @@ export default class EncryptionService extends BaseService {
 
     constructor(db, context) {
         super(db, context);
+    }
+
+    async encryptOrDecryptDbIfRequired() {
+        const isDbEncryptionEnabled = this.getService(OrganisationConfigService).isDbEncryptionEnabled();
+        if(isDbEncryptionEnabled)
+            await this.encryptRealm();
+        else
+            await this.decryptRealm();
     }
 
     async isAlreadyEncrypted() {
@@ -110,7 +119,8 @@ export default class EncryptionService extends BaseService {
 
             return key;
         } catch (error) {
-            console.log("Keychain couldn't be accessed!", error);
+            General.logDebug("EncryptionService", "Keychain couldn't be accessed!");
+            General.logError("EncryptionService", error);
             throw error;
         }
     }

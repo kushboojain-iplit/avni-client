@@ -9,7 +9,6 @@ module.exports = {
             },
         }),
     },
-
     resolver: {
         extraNodeModules: {
             "avni-models": path.resolve(__dirname, "node_modules/openchs-models"),
