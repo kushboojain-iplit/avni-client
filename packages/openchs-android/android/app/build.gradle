@@ -151,6 +151,7 @@ android {
             storePassword System.getenv("BAHMNI_KEYSTORE_PASSWORD")
             keyAlias "${System.getenv("KEY_STORE_PREFIX") ?: ""}bahmni"
             keyPassword System.getenv("BAHMNI_KEY_PASSWORD")
+            enableV1Signing false
         }
     }
     buildTypes {

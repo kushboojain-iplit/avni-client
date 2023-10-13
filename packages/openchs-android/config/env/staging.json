@@ -1,5 +1,5 @@
 {
-  "SERVER_URL": "https://staging.avniproject.org",
+  "SERVER_URL": "https://avni.gdobahmni.click",
   "ENV": "staging",
   "HIP_BASE_URL": "https://dev.gdobahmni.click",
   "ESANJEEVANI_SERVICE_URL": "https://dev.gdobahmni.click/esanjeevani-bridge"
