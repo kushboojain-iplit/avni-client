@@ -25,7 +25,13 @@ class ESanjeevaniLogin extends AbstractComponent {
       showWebView: false,
       webUrl: '',
       error: null,
-      isChecked: false
+      isChecked: true,
+      username: '',
+      password: '',
+      rememberPassword: true,
+      countdown: 5,
+      showAutoLogin: false,
+      showPassword: false
     };
 
     this.webView = {
@@ -35,13 +41,6 @@ class ESanjeevaniLogin extends AbstractComponent {
 
     this.settings = context.getService(SettingsService)
     this.authService = this.context.getService(AuthService)
-
-    this.state = {
-      username: '',
-      password: '',
-      rememberPassword: false,
-      showPassword: false
-    };
 
     if(this.getObservationValueWrapper("Postal Code") == null) {
       this.state.error = "Postal code cannot be null"
@@ -65,7 +64,9 @@ class ESanjeevaniLogin extends AbstractComponent {
       const password = await AsyncStorage.getItem('password');
       if (username && password) {
         this.setState({ username, password });
-        console.log('Credentials loaded successfully.');
+      }
+      if (username && password && !this.state.error) {
+        this.startCountdown();
       }
     } catch (error) {
       console.error('Error loading credentials:', error);
@@ -97,7 +98,7 @@ class ESanjeevaniLogin extends AbstractComponent {
     return _.isNil(Obs) ? null : Obs.getValueWrapper().value;
   }  
 
-  async callESanjeevani(postData) {
+  async callESanjeevani(postData, rememberPassword) {
     try {
       const esanjeevaniServiceUrl = this.settings.getESaneevaniServiceUrl();
       const apiUrl = `${esanjeevaniServiceUrl}/registerAndLaunch`;
@@ -111,8 +112,11 @@ class ESanjeevaniLogin extends AbstractComponent {
       });
       
       this.setState({ webUrl: response.data ,showWebView: true });
-    
       
+      if (rememberPassword) {
+        this.saveCredentials();
+      }
+
     } catch (error) {
       if (error.response) {
         if (error.response.status === 400) {
@@ -130,6 +134,24 @@ class ESanjeevaniLogin extends AbstractComponent {
 
   }
 
+  startCountdown = () => {
+    this.setState({ showAutoLogin: true });
+    this.countdownInterval = setInterval(() => {
+      const { countdown } = this.state;
+      if (countdown > 1) {
+        this.setState({ countdown: countdown - 1 });
+      } else {
+        this.setState({ showAutoLogin: false });
+        clearInterval(this.countdownInterval);
+        this.handleLogin();
+      }
+    }, 1000);
+  };
+
+  cancelAutoLogin = () => {
+    clearInterval(this.countdownInterval);
+    this.setState({ showAutoLogin: false });
+  };
 
   componentDidMount() {
     BackHandler.addEventListener('hardwareBackPress', this.handleBackButton);
@@ -138,6 +160,7 @@ class ESanjeevaniLogin extends AbstractComponent {
   
   componentWillUnmount() {
    BackHandler.removeEventListener('hardwareBackPress', this.handleBackButton);
+   clearInterval(this.countdownInterval);
   }
 
 
@@ -156,18 +179,12 @@ class ESanjeevaniLogin extends AbstractComponent {
       this.setState({ rememberPassword: !isChecked });
     };
 
-
-
   handleLogin = async () => {
     const { username, password, rememberPassword } = this.state;
 
     const { individual } = this.props;
 
     const addressMap = await this.getAddress(individual.lowestAddressLevel.uuid);
-
-    if (rememberPassword) {
-      this.saveCredentials();
-    }
 
     const loginData = {
       patient: {
@@ -196,9 +213,8 @@ class ESanjeevaniLogin extends AbstractComponent {
       }
     };
 
-    
 
-    await this.callESanjeevani(loginData);
+    await this.callESanjeevani(loginData, rememberPassword);
 
   };
 
@@ -224,6 +240,7 @@ class ESanjeevaniLogin extends AbstractComponent {
 
 
   render () {
+    const { countdown, showAutoLogin } = this.state;
     return (
       <View style={{ flex: 1 }}>
         {this.state.showWebView ? (
@@ -274,7 +291,13 @@ class ESanjeevaniLogin extends AbstractComponent {
               </View>
               <Text style={{marginLeft: 10}}>Remember Username and Password</Text>
             </TouchableOpacity>
-            <Button title="Login" onPress={this.handleLogin} />
+            { !showAutoLogin && <Button title="Login" onPress={this.handleLogin} disabled={this.state.error === "Postal code cannot be null" ? true : false} /> }
+            { showAutoLogin && this.state.error !== "Postal code cannot be null" && (
+              <>
+                <Text style={{ color: 'green',  marginBottom: 10 }}>Auto login will happen in {countdown} secs</Text>
+                <Button onPress={this.cancelAutoLogin} title='Cancel' ></Button>
+              </>
+            )}
 
             {this.state.error && (
                 <Text style={{ color: 'red', marginTop: 10 }}>{this.state.error}</Text>
