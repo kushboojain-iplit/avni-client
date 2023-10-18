@@ -76,10 +76,15 @@ class FormElementGroup extends AbstractComponent {
         }
         if (this.props.abhaResponse) {
             filteredFormElements
-                .filter(item => Object.keys(map).includes(item.that.name))
+                .filter(item => Object.keys(map).includes(item.that.name) || item.that.name === "ABHA Creation Error")
                 .forEach(data => {
-                    const key = map[data.that.name];
-                    this.dispatchAction(Actions.PRIMITIVE_VALUE_CHANGE, { formElement: data, value: this.props.abhaResponse[key] });
+                    if(data.that.name === "ABHA Creation Error"){
+                        this.dispatchAction(Actions.PRIMITIVE_VALUE_CHANGE, { formElement: data, value: null });
+                    }
+                    else{
+                        const key = map[data.that.name];
+                        this.dispatchAction(Actions.PRIMITIVE_VALUE_CHANGE, { formElement: data, value: this.props.abhaResponse[key] });
+                    }
                 });
         }
         super.UNSAFE_componentWillMount();
