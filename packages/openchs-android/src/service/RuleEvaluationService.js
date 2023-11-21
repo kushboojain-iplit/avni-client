@@ -41,6 +41,7 @@ import GroupSubjectService from "./GroupSubjectService";
 import ProgramService from "./program/ProgramService";
 import individualServiceFacade from "./facade/IndividualServiceFacade";
 import addressLevelServiceFacade from "./facade/AddressLevelServiceFacade";
+import MessageService from './MessageService';
 
 function getImports() {
     return {rulesConfig, common, lodash, moment, motherCalculations, log: console.log};
@@ -76,6 +77,7 @@ class RuleEvaluationService extends BaseService {
         this.entityRulesMap.forEach((entityRule, key) => {
             entityRule.setFunctions(entityRule.ruleFile);
         });
+        this.I18n = this.getService(MessageService).getI18n();
         this.formMappingService = this.getService(FormMappingService);
         this.conceptService = this.getService(ConceptService);
         this.groupSubjectService = this.getService(GroupSubjectService);
@@ -134,7 +136,8 @@ class RuleEvaluationService extends BaseService {
                 return trimmedDecisions;
             } catch (e) {
                 General.logDebug("RuleEvaluationService",`form.uuid: ${form.uuid} entityName: ${entityName}`);
-                this.saveFailedRules(e, form.uuid, individualUUID);
+                this.saveFailedRules(e, form.uuid, individualUUID,
+                  'Decision', form.uuid, entityName, entity.uuid);
             }
         } else {
             const decisionsMap = rulesFromTheBundle.reduce((decisions, rule) => {
@@ -151,8 +154,9 @@ class RuleEvaluationService extends BaseService {
     getRuleServiceLibraryInterfaceForSharingModules() {
         return {
             log: console.log,
-            common: common,
-            motherCalculations: motherCalculations
+            common,
+            motherCalculations,
+            models
         };
     }
 
@@ -179,7 +183,8 @@ class RuleEvaluationService extends BaseService {
             this.conceptService.findConcept(conceptName);
             return true;
         } catch (error) {
-            this.saveFailedRules(error, ruleUUID, individualUUID);
+            this.saveFailedRules(error, ruleUUID, individualUUID,
+             'Validation', ruleUUID, 'Individual', individualUUID);
             return false;
         }
     }
@@ -203,7 +208,8 @@ class RuleEvaluationService extends BaseService {
                 });
             } catch (e) {
                 General.logDebug("Rule-Failure", `New worklist updation rule failed  ${orgConfig.uuid} `);
-                this.saveFailedRules(e, orgConfig.uuid, this.getIndividualUUID(workLists, "WorkList"));
+                this.saveFailedRules(e, orgConfig.uuid, this.getIndividualUUID(workLists, "WorkList"),
+                  'WorkListUpdation', orgConfig.uuid, entityName, context.entity.uuid);
             }
         } else {
             const additionalRules = this.getService(RuleService).getRulesByType('WorkListUpdation');
@@ -225,28 +231,36 @@ class RuleEvaluationService extends BaseService {
             }
         } catch (error) {
             General.logDebug("Rule-Failure", `Rule failed: ${rule.name}, uuid: ${rule.uuid}`);
-            this.saveFailedRules(error, rule.uuid, this.getIndividualUUID(entity, entityName));
+            this.saveFailedRules(error, rule.uuid, this.getIndividualUUID(entity, entityName),
+              'Decision', rule.uuid, entityName, entity.uuid);
             return ruleTypeValue;
         }
     }
 
-    failedRuleExistsInDB(ruleUUID, errorMessage, individualUUID) {
+    failedRuleExistsInDB(ruleUUID, errorMessage, individualUUID, sourceId, entityId) {
         return this.getAll(RuleFailureTelemetry.schema.name)
-            .filtered('ruleUuid=$0 AND errorMessage=$1 AND individualUuid=$2',
+            .filtered('ruleUuid=$0 AND errorMessage=$1 AND individualUuid=$2 AND sourceId=$3 AND entityId=$4',
                 ruleUUID,
                 errorMessage,
-                individualUUID
+                individualUUID,
+                sourceId,
+                entityId
             ).length > 0;
     }
 
-    saveFailedRules(error, ruleUUID, individualUUID) {
-        if (!this.failedRuleExistsInDB(ruleUUID, error.message, individualUUID)) {
+    saveFailedRules(error, ruleUUID, individualUUID, sourceType, sourceUUID, entityType, entityUUID) {
+        if (!this.failedRuleExistsInDB(ruleUUID, error.message, individualUUID, sourceUUID, entityUUID)) {
             const entityService = this.getService(EntityService);
             let ruleFailureTelemetry = RuleFailureTelemetry.create({
                 errorMessage: error.message,
                 stacktrace: error.stack,
                 ruleUUID: ruleUUID,
                 individualUUID: individualUUID,
+                sourceType: sourceType,
+                sourceId: sourceUUID,
+                entityType: entityType,
+                entityId: entityUUID,
+                appType: 'Android'
             });
             entityService.saveAndPushToEntityQueue(ruleFailureTelemetry, RuleFailureTelemetry.schema.name);
         }
@@ -261,7 +275,8 @@ class RuleEvaluationService extends BaseService {
         try {
             return this.entityRulesMap.get(entityName).getEnrolmentSummary(enrolment, context);
         } catch (error) {
-            this.saveFailedRules(error, '', this.getIndividualUUID(enrolment, entityName));
+            this.saveFailedRules(error, '', this.getIndividualUUID(enrolment, entityName),
+              'EnrolmentSummary', enrolment.program.uuid, entityName, enrolment.uuid);
             return [];
         }
     }
@@ -287,7 +302,7 @@ class RuleEvaluationService extends BaseService {
                     params: {summaries: [], individual, context, services: this.services},
                     imports: getImports()
                 });
-                summaries = this.validateSummaries(summaries, subjectType.uuid);
+                summaries = this.validateSummaries(summaries, subjectType.uuid, this.getIndividualUUID(individual, entityName));
                 return _.map(summaries, (summary) => {
                     const concept = this.conceptService.conceptFor(summary.name);
                     return Observation.create(concept, concept.getValueWrapperFor(summary.value), summary.abnormal);
@@ -295,7 +310,8 @@ class RuleEvaluationService extends BaseService {
             } catch (e) {
                 General.logDebug("Rule-Failure",
                     `Subject Summary Rule failed for: ${subjectType.name} Subject type`);
-                this.saveFailedRules(e, subjectType.uuid, this.getIndividualUUID(individual, entityName));
+                this.saveFailedRules(e, subjectType.uuid, this.getIndividualUUID(individual, entityName),
+                  'SubjectSummary', subjectType.uuid, entityName, individual.uuid);
                 return [];
             }
         }
@@ -326,7 +342,8 @@ class RuleEvaluationService extends BaseService {
         } catch (e) {
             General.logDebug("Rule-Failure",
                 `Subject Program Eligibility Rule failed for: ${subjectType.name} Subject type ${e.message} ${e.stack}`);
-            this.saveFailedRules(e, subjectType.uuid, this.getIndividualUUID(individual, 'Individual'));
+            this.saveFailedRules(e, subjectType.uuid, this.getIndividualUUID(individual, 'Individual'),
+              'EnrolmentEligibilityCheck', subjectType.uuid, 'Individual', individual.uuid);
             throw Error(e.message);
         }
     }
@@ -355,7 +372,7 @@ class RuleEvaluationService extends BaseService {
                 params: {summaries: [], programEnrolment: enrolment, services: this.services},
                 imports: getImports()
             });
-            summaries = this.validateSummaries(summaries, enrolment.uuid);
+            summaries = this.validateSummaries(summaries, enrolment.uuid, enrolment.individual.uuid);
             const summaryObservations = _.map(summaries, (summary) => {
                 const concept = this.conceptService.conceptFor(summary.name);
                 return Observation.create(concept, concept.getValueWrapperFor(summary.value), summary.abnormal);
@@ -364,7 +381,8 @@ class RuleEvaluationService extends BaseService {
         } catch (e) {
             General.logDebug("Rule-Failure",
                 `New Enrolment Summary Rule failed for: ${enrolment.program.name} program`);
-            this.saveFailedRules(e, enrolment.uuid, this.getIndividualUUID(enrolment, entityName));
+            this.saveFailedRules(e, program.uuid, this.getIndividualUUID(enrolment, entityName),
+              'EnrolmentSummary', program.uuid, entityName, enrolment.uuid);
             return [];
         }
     }
@@ -383,8 +401,9 @@ class RuleEvaluationService extends BaseService {
                 });
             } catch (e) {
                 console.log(e);
-                General.logDebug("Rule-Failure", `New enrolment decision failed for: ${form.name} form name`);
-                this.saveFailedRules(e, form.uuid, this.getIndividualUUID(entity, entityName));
+                General.logDebug("Rule-Failure", `Validation failed for: ${form.name} form name`);
+                this.saveFailedRules(e, form.uuid, this.getIndividualUUID(entity, entityName),
+                  'Validation', form.uuid, entityName, entity.uuid);
             }
         } else if (!_.isEmpty(rulesFromTheBundle)) {
             const validationErrors = rulesFromTheBundle.reduce(
@@ -442,7 +461,8 @@ class RuleEvaluationService extends BaseService {
                 return allChecklists;
             } catch (e) {
                 General.logDebug("Rule-Failure", `New checklist rule failed for form: ${form.uuid}`);
-                this.saveFailedRules(e, form.uuid, this.getIndividualUUID(entity, entityName));
+                this.saveFailedRules(e, form.uuid, this.getIndividualUUID(entity, entityName),
+                  'Checklist', form.uuid, entityName, entity.uuid);
             }
         } else {
             const allChecklists = this.getAllRuleItemsFor(form, "Checklists", "Form")
@@ -478,7 +498,8 @@ class RuleEvaluationService extends BaseService {
             });
         } catch (e) {
             General.logDebug("Rule-Failure", `New form element group rule failed for: ${formElementGroup.uuid}`);
-            this.saveFailedRules(e, formElementGroup.uuid, this.getIndividualUUID(entity, entityName));
+            this.saveFailedRules(e, formElementGroup.uuid, this.getIndividualUUID(entity, entityName),
+              'FormElementGroup', formElementGroup.uuid, entityName, entity.uuid);
         }
     }
 
@@ -565,7 +586,8 @@ class RuleEvaluationService extends BaseService {
             });
         } catch (e) {
             General.logDebug("Rule-Failure", `New Rule failed for: ${formElement.name}`);
-            this.saveFailedRules(e, formElement.uuid, this.getIndividualUUID(entity, entityName));
+            this.saveFailedRules(e, formElement.uuid, this.getIndividualUUID(entity, entityName),
+              'FormElement', formElement.uuid, entityName, entity.uuid);
             return null;
         }
     }
@@ -606,7 +628,8 @@ class RuleEvaluationService extends BaseService {
             } catch (e) {
                 General.logDebug("Rule-Faiure", e);
                 General.logDebug("Rule-Failure", `New encounter eligibility failed for: ${encounterType.name} encounter name`);
-                this.saveFailedRules(e, encounterType.uuid, this.getIndividualUUID(encounterType));
+                this.saveFailedRules(e, encounterType.uuid, individual.uuid,
+                  'EncounterEligibilityCheck', encounterType.uuid, 'Individual', individual.uuid);
             }
         } else if (!_.isEmpty(rulesFromTheBundle)) {
             return this.runRuleAndSaveFailure(_.last(rulesFromTheBundle), 'Encounter', {individual}, true);
@@ -628,7 +651,8 @@ class RuleEvaluationService extends BaseService {
             } catch (e) {
                 General.logDebug("Rule-Failure", e);
                 General.logDebug("Rule-Failure", `New enrolment eligibility failed for: ${program.name} program name`);
-                this.saveFailedRules(e, program.uuid, this.getIndividualUUID(program));
+                this.saveFailedRules(e, program.uuid, individual.uuid,
+                  'EnrolmentEligibilityCheck', program.uuid, 'Individual', individual.uuid);
             }
         } else if (!_.isEmpty(rulesFromTheBundle)) {
             return this.runRuleAndSaveFailure(_.last(rulesFromTheBundle), 'Encounter', {individual}, true);
@@ -648,20 +672,29 @@ class RuleEvaluationService extends BaseService {
             } catch (e) {
                 General.logDebug("Rule-Failure", e);
                 General.logDebug("Rule-Failure", `Manual enrolment eligibility failed for: ${program.name} program name`);
-                this.saveFailedRules(e, program.uuid, this.getIndividualUUID(program));
+                this.saveFailedRules(e, program.uuid, subject.uuid,
+                  'ManualEnrolmentEligibilityCheckRule', program.uuid, 'Individual', subject.uuid);
             }
         }
 
         return true;
     }
 
-    executeDashboardCardRule(rule, ruleInput) {
-        const ruleFunc = eval(rule);
-        const result = ruleFunc({
-            params: {db: this.db, ruleInput: ruleInput},
-            imports: {lodash, moment}
-        });
-        return result;
+    executeDashboardCardRule(reportCard, ruleInput) {
+        try {
+            const ruleFunc = eval(reportCard.query);
+            const result = ruleFunc({
+                params: {db: this.db, ruleInput: ruleInput},
+                imports: {lodash, moment}
+            });
+            return result;
+        } catch (error) {
+            General.logError("Rule-Failure", `DashboardCard report card rule failed for uuid: ${reportCard.uuid}, name: ${reportCard.name}`);
+            General.logError("Rule-Failure", error);
+            this.saveFailedRules(error, reportCard.uuid, '',
+              'ReportCard', reportCard.uuid, null, null);
+            return {primaryValue: this.I18n.t("Error"), lineListFunction: _.noop()};
+        }
     }
 
     isOldStyleQueryResult(queryResult) {
@@ -669,8 +702,8 @@ class RuleEvaluationService extends BaseService {
         return queryResult.length !== undefined;
     }
 
-    getDashboardCardCount(rule, ruleInput) {
-        const queryResult = this.executeDashboardCardRule(rule, ruleInput);
+    getDashboardCardCount(reportCard, ruleInput) {
+        const queryResult = this.executeDashboardCardRule(reportCard, ruleInput);
         if (this.isOldStyleQueryResult(queryResult)) {
             return {primaryValue: queryResult.length, secondaryValue: null, clickable: true};
         } else {
@@ -682,8 +715,8 @@ class RuleEvaluationService extends BaseService {
         }
     }
 
-    getDashboardCardQueryResult(rule, ruleInput) {
-        const queryResult = this.executeDashboardCardRule(rule, ruleInput);
+    getDashboardCardQueryResult(reportCard, ruleInput) {
+        const queryResult = this.executeDashboardCardRule(reportCard, ruleInput);
         if (this.isOldStyleQueryResult(queryResult)) {//The result can either be an array or a RealmResultsProxy. We are looking for existence of the length key.
             return queryResult;
         } else {

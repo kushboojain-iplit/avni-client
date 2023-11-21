@@ -1,4 +1,4 @@
-import {Encounter, Form, FormElementGroup, FormElement, Concept} from 'openchs-models';
+import {Encounter, Form, Comment, FormElementGroup, FormElement, Concept} from 'openchs-models';
 import GlobalContext from "../src/GlobalContext";
 import {assert} from "chai";
 import TestFormFactory from "../test/model/form/TestFormFactory";
@@ -8,12 +8,15 @@ import General from "../src/utility/General";
 import TestFormElementFactory from "../test/model/form/TestFormElementFactory";
 import TestKeyValueFactory from "../test/model/TestKeyValueFactory";
 import TestConceptFactory from "../test/model/TestConceptFactory";
+import TestCommentFactory from "../test/model/comment/TestCommentFactory";
 
 class DatabaseTest extends BaseIntegrationTest {
     shouldReturnFirstElementAsNilIfCollectionIsEmpty() {
         const db = GlobalContext.getInstance().db;
-        assert.equal(null, db.objects(Encounter.schema.name)[0]);
-        assert.equal(null, db.objects(Encounter.schema.name).filtered("uuid = '1'")[0]);
+        assert.equal(db.objects(Encounter.schema.name).length, 0);
+        const objects = db.objects(Encounter.schema.name);
+        assert.equal(objects[0], null);
+        assert.equal(db.objects(Encounter.schema.name).filtered("uuid = '1'")[0], null);
     }
 
     save_plain_object_graph_causes_circular_saves_leading_to_error() {

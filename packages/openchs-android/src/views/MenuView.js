@@ -10,17 +10,10 @@ import General from "../utility/General";
 import CHSContent from "./common/CHSContent";
 import Colors from "./primitives/Colors";
 import AuthService from "../service/AuthService";
-import RuleService from "../service/RuleService";
-import ProgramConfigService from "../service/ProgramConfigService";
-import MessageService from "../service/MessageService";
-import {IndividualSearchActionNames as IndividualSearchActions} from "../action/individual/IndividualSearchActions";
-import {LandingViewActionsNames as LandingViewActions} from "../action/LandingViewActions";
-import {MyDashboardActionNames} from "../action/mydashboard/MyDashboardActions";
 import RuleEvaluationService from "../service/RuleEvaluationService";
 import Distances from "./primitives/Distances";
 import Fonts from "./primitives/Fonts";
 import CHSContainer from "./common/CHSContainer";
-import {Icon} from 'native-base';
 import Separator from "./primitives/Separator";
 import SettingsView from "./settings/SettingsView";
 import Styles from "./primitives/Styles";
@@ -127,25 +120,10 @@ class MenuView extends AbstractComponent {
         TypedTransition.from(this).to(SettingsView);
     }
 
-    reset() {
-        this.context.getService(RuleEvaluationService).init();
-        this.context.getService(ProgramConfigService).init();
-        this.context.getService(MessageService).init();
-        this.context.getService(RuleService).init();
-        this.dispatchAction('RESET');
-
-        //To load subjectType after sync
-        this.dispatchAction(IndividualSearchActions.ON_LOAD);
-        this.dispatchAction(MyDashboardActionNames.ON_LOAD);
-
-        //To re-render LandingView after sync
-        this.dispatchAction(LandingViewActions.ON_LOAD);
-    }
-
     deleteData() {
         this.getService(AuthService).getAuthProviderService().logout()
             .then(() => this.getService(SyncService).clearData())
-            .then(() => this.reset())
+            .then(() => this.getService(SyncService).reset(true))
             .then(() => CHSNavigator.navigateToLoginView(this, false));
     }
 

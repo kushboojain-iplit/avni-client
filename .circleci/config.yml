@@ -13,6 +13,11 @@ parameters:
     type: string
     default: "1.0.0"
     description: Version name for the binary for external display on the play store. Is of the format 3.37.2.
+
+orbs:
+  aws-cli: circleci/aws-cli@4.1.1
+  aws-s3: circleci/aws-s3@4.0
+
 jobs:
   install_deps:
     docker:
@@ -20,17 +25,8 @@ jobs:
     working_directory: ~/avni-client
     steps:
       - checkout
-      #      - restore_cache:
-      #          keys:
-      #          - v1-dependencies-{{ checksum "package.json" }}
-      #          - v1-dependencies-{{ checksum "packages/openchs-android/package.json" }}
-      #          - v1-dependencies-
       - run: sudo apt-get install make
       - run: make deps_ci
-#      - save_cache:
-#          paths:
-#            - node_modules
-#          key: v1-dependencies-{{ checksum "package.json" }}
       - save_cache:
           paths:
             - packages/openchs-android/node_modules
@@ -44,7 +40,6 @@ jobs:
       - checkout
       - restore_cache:
           keys:
-#            - v1-dependencies-{{ checksum "package.json" }}
             - v1-dependencies-{{ checksum "packages/openchs-android/package.json" }}
             - v1-dependencies-
       - run: sudo apt-get install make
@@ -63,19 +58,14 @@ jobs:
       - run: echo "Building flavor << pipeline.parameters.flavor >>"
       - restore_cache:
           keys:
-#            - v1-dependencies-{{ checksum "package.json" }}
             - v1-dependencies-{{ checksum "packages/openchs-android/package.json" }}
       - restore_cache:
           keys:
             - v1-dependencies-{{ checksum "packages/openchs-android/android/app/build.gradle" }}-staging
             - v1-dependencies-
-#      - run: sudo apt --only-upgrade install software-properties-common
-#      - run: sudo apt-add-repository 'deb http://security.debian.org/debian-security stretch/updates main'
-#      - run: sudo apt update
-#      - run: sudo apt install openjdk-11-jdk make
       - run: sudo chmod a+x packages/openchs-android/android/gradlew
       - run: sudo npm i -g react-native-cli
-      - run: make deps_ci release_staging_without_clean
+      - run: make deps_ci release_staging_dev_without_clean
       - run: make deploy_platform_translations_staging
       - save_cache:
           key: v1-dependencies-{{ checksum "packages/openchs-android/android/app/build.gradle" }}-staging
@@ -86,7 +76,7 @@ jobs:
             - ~/avni-client/packages/openchs-android/android/.gradle
       - store_artifacts:
           path: packages/openchs-android/android/app/build/outputs/apk/<< pipeline.parameters.flavor >>/release/app-<< pipeline.parameters.flavor >>-release.apk
-          destination: << pipeline.parameters.flavor >>-staging-<< pipeline.git.revision >>.apk
+          destination: << pipeline.parameters.flavor >>-staging_dev-<< pipeline.git.revision >>.apk
       - store_artifacts:
           path: packages/openchs-android/android/app/build/generated/sourcemaps/react/<< pipeline.parameters.flavor >>Release/index.android.bundle.map
           destination: sourcemap-<< pipeline.parameters.flavor >>-staging-<< pipeline.git.revision >>.map
@@ -103,19 +93,27 @@ jobs:
       - run: echo "Building flavor << pipeline.parameters.flavor >>"
       - restore_cache:
           keys:
-            #            - v1-dependencies-{{ checksum "package.json" }}
             - v1-dependencies-{{ checksum "packages/openchs-android/package.json" }}
       - restore_cache:
           keys:
             - v1-dependencies-{{ checksum "packages/openchs-android/android/app/build.gradle" }}-prerelease
             - v1-dependencies-
-      #      - run: sudo apt --only-upgrade install software-properties-common
-      #      - run: sudo apt-add-repository 'deb http://security.debian.org/debian-security stretch/updates main'
-      #      - run: sudo apt update
-      #      - run: sudo apt install openjdk-11-jdk make
       - run: sudo chmod a+x packages/openchs-android/android/gradlew
       - run: sudo npm i -g react-native-cli
+      - aws-cli/setup:
+          role_arn: 'arn:aws:iam::118388513628:role/CircleCI-OIDC'
+          region: 'ap-south-1'
+      - run: make deps_ci release_prerelease_dev_without_clean
+      - aws-s3/copy:
+          from: packages/openchs-android/android/app/build/outputs/apk/<< pipeline.parameters.flavor >>/release/app-<< pipeline.parameters.flavor >>-release.apk
+          to: s3://samanvay/openchs/<< pipeline.number >>-<< pipeline.git.revision >>/prerelease_dev/
+      - store_artifacts:
+          path: packages/openchs-android/android/app/build/outputs/apk/<< pipeline.parameters.flavor >>/release/app-<< pipeline.parameters.flavor >>-release.apk
+          destination: << pipeline.parameters.flavor >>-prerelease_dev-<< pipeline.git.revision >>.apk
       - run: make deps_ci release_prerelease_without_clean
+      - aws-s3/copy:
+          from: packages/openchs-android/android/app/build/outputs/apk/<< pipeline.parameters.flavor >>/release/app-<< pipeline.parameters.flavor >>-release.apk
+          to: s3://samanvay/openchs/<< pipeline.number >>-<< pipeline.git.revision >>/prerelease/
       - run: make deploy_platform_translations_prerelease
       - save_cache:
           key: v1-dependencies-{{ checksum "packages/openchs-android/android/app/build.gradle" }}-prerelease
@@ -191,21 +189,14 @@ jobs:
       - run: echo "Building versionCode << pipeline.parameters.versionCode >>; versionName << pipeline.parameters.versionName >>"
       - restore_cache:
           keys:
-#            - v1-dependencies-{{ checksum "package.json" }}
             - v1-dependencies-{{ checksum "packages/openchs-android/package.json" }}
       - restore_cache:
           keys:
             - v1-dependencies-{{ checksum "packages/openchs-android/android/app/build.gradle" }}-live
             - v1-dependencies-
-#      - run: sudo apt update
-#      - run: sudo apt install openjdk-11-jdk make
       - run: sudo chmod a+x packages/openchs-android/android/gradlew
       - run: sudo npm i -g react-native-cli
       - run: make deps_ci
-#      - run: versionName=<< pipeline.parameters.versionName >> versionCode=<< pipeline.parameters.versionCode >> make release_prod_without_clean
-#      - store_artifacts:
-#          path: packages/openchs-android/android/app/build/outputs/apk/<< pipeline.parameters.flavor >>/release/app-<< pipeline.parameters.flavor >>-release.apk
-#          destination: << pipeline.parameters.flavor >>-live-<< pipeline.parameters.versionName >>-<< pipeline.git.revision >>.apk
       - run: versionName=<< pipeline.parameters.versionName >> versionCode=<< pipeline.parameters.versionCode >> make bundle_release_prod_without_clean
       - save_cache:
           key: v1-dependencies-{{ checksum "packages/openchs-android/android/app/build.gradle" }}-live
@@ -226,6 +217,20 @@ jobs:
       - store_artifacts:
           path: avniuniversal.apks
           destination: << pipeline.parameters.flavor >>-live-<< pipeline.parameters.versionName >>-<< pipeline.git.revision >>-apk.zip
+      - aws-cli/setup:
+          role_arn: 'arn:aws:iam::118388513628:role/CircleCI-OIDC'
+          region: 'ap-south-1'
+      - aws-s3/copy:
+          from: avniuniversal.apks
+          to: s3://samanvay/openchs/<< pipeline.number >>-<< pipeline.git.revision >>/prod/
+      - run: versionName=<< pipeline.parameters.versionName >> versionCode=<< pipeline.parameters.versionCode >> make release_prod_dev_universal_without_clean
+      - aws-s3/copy:
+          from: packages/openchs-android/android/app/build/outputs/apk/<< pipeline.parameters.flavor >>/release/app-<< pipeline.parameters.flavor >>-release.apk
+          to: s3://samanvay/openchs/<< pipeline.number >>-<< pipeline.git.revision >>/prod_dev/
+      - store_artifacts:
+          path: packages/openchs-android/android/app/build/outputs/apk/<< pipeline.parameters.flavor >>/release/app-<< pipeline.parameters.flavor >>-release.apk
+          destination: << pipeline.parameters.flavor >>-live_dev-<< pipeline.parameters.versionName >>-<< pipeline.git.revision >>-apk.zip
+
 workflows:
   version: 2
   test_all:
@@ -234,10 +239,6 @@ workflows:
       - test_android:
           requires:
             - install_deps
-#      - hold_staging:
-#          type: approval
-#          requires:
-#            - test_android
       - hold_prerelease:
           type: approval
           requires:
@@ -256,15 +257,18 @@ workflows:
               ignore:
                 - /^dependabot.*/
           requires:
-#            - hold_staging
             - test_android
       - release_android_prerelease:
+          context:
+            - CIRCLECI_OIDC_AWS
           requires:
             - hold_prerelease
       - release_android_perf:
           requires:
             - hold_perf
       - release_android_live:
+          context:
+            - CIRCLECI_OIDC_AWS
           requires:
             - hold_live
 

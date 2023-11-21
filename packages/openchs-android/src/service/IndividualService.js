@@ -23,12 +23,13 @@ import EntityApprovalStatusService from "./EntityApprovalStatusService";
 import GroupSubjectService from "./GroupSubjectService";
 import OrganisationConfigService from './OrganisationConfigService';
 import {getUnderlyingRealmCollection} from "openchs-models";
+import RealmQueryService from "./query/RealmQueryService";
+import {DashboardReportFilter} from "../model/DashboardReportFilters";
 
 @Service("individualService")
 class IndividualService extends BaseService {
     constructor(db, context) {
         super(db, context);
-        this.allHighRiskPatients = this.allHighRiskPatients.bind(this);
         this.allCompletedVisitsIn = this.allCompletedVisitsIn.bind(this);
         this.allScheduledVisitsIn = this.allScheduledVisitsIn.bind(this);
         this.allOverdueVisitsIn = this.allOverdueVisitsIn.bind(this);
@@ -157,7 +158,7 @@ class IndividualService extends BaseService {
     }
 
     allInWithFilters = (ignored, queryAdditions, programs = [], encounterTypes = []) => {
-        if(!this.hideTotalForProgram() || (_.isEmpty(programs) && _.isEmpty(encounterTypes))) {
+        if (!this.hideTotalForProgram() || (_.isEmpty(programs) && _.isEmpty(encounterTypes))) {
             return this.allIn(ignored, queryAdditions);
         }
         return null;
@@ -171,25 +172,33 @@ class IndividualService extends BaseService {
             .sorted('name');
     }
 
-    allScheduledVisitsIn(date, programEncounterCriteria, encounterCriteria, queryProgramEncounter = true, queryGeneralEncounter = true) {
+    allScheduledVisitsIn(date, reportFilters, programEncounterCriteria, encounterCriteria, queryProgramEncounter = true, queryGeneralEncounter = true) {
         const performProgramVisitCriteria = `privilege.name = '${Privilege.privilegeName.performVisit}' AND privilege.entityType = '${Privilege.privilegeEntityType.encounter}'`;
         const privilegeService = this.getService(PrivilegeService);
         const allowedProgramEncounterTypeUuidsForPerformVisit = privilegeService.allowedEntityTypeUUIDListForCriteria(performProgramVisitCriteria, 'programEncounterTypeUuid');
         const dateMidnight = moment(date).endOf('day').toDate();
         const dateMorning = moment(date).startOf('day').toDate();
-        const programEncounters = queryProgramEncounter ? this.db.objects(ProgramEncounter.schema.name)
-            .filtered('earliestVisitDateTime <= $0 ' +
-                'AND maxVisitDateTime >= $1 ' +
-                'AND encounterDateTime = null ' +
-                'AND cancelDateTime = null ' +
-                'AND programEnrolment.programExitDateTime = null ' +
-                'AND programEnrolment.voided = false ' +
-                'AND programEnrolment.individual.voided = false ' +
-                'AND voided = false ',
-                dateMidnight,
-                dateMorning)
-            .filtered((_.isEmpty(programEncounterCriteria) ? 'uuid != null' : `${programEncounterCriteria}`))
-            .map((enc) => {
+        const addressFilter = DashboardReportFilter.getAddressFilter(reportFilters);
+
+        let programEncounters = [];
+        if (queryProgramEncounter) {
+            programEncounters = this.db.objects(ProgramEncounter.schema.name)
+                .filtered('earliestVisitDateTime <= $0 ' +
+                    'AND maxVisitDateTime >= $1 ' +
+                    'AND encounterDateTime = null ' +
+                    'AND cancelDateTime = null ' +
+                    'AND programEnrolment.programExitDateTime = null ' +
+                    'AND programEnrolment.voided = false ' +
+                    'AND programEnrolment.individual.voided = false ' +
+                    'AND voided = false ',
+                    dateMidnight,
+                    dateMorning);
+            if (!_.isEmpty(programEncounterCriteria))
+                programEncounters = programEncounters.filtered(programEncounterCriteria);
+            if (!_.isNil(addressFilter))
+                programEncounters = RealmQueryService.filterBasedOnAddress(ProgramEncounter.schema.name, programEncounters, addressFilter);
+
+            programEncounters = programEncounters.map((enc) => {
                 const individual = enc.programEnrolment.individual;
                 const visitName = enc.name || enc.encounterType.operationalEncounterTypeName;
                 const programName = enc.programEnrolment.program.operationalProgramName || enc.programEnrolment.program.name;
@@ -208,20 +217,27 @@ class IndividualService extends BaseService {
                         allow: !privilegeService.hasEverSyncedGroupPrivileges() || privilegeService.hasAllPrivileges() || _.includes(allowedProgramEncounterTypeUuidsForPerformVisit, enc.encounterType.uuid)
                     }
                 };
-            }) : [];
+            });
+        }
 
         const allowedGeneralEncounterTypeUuidsForPerformVisit = this.getService(PrivilegeService).allowedEntityTypeUUIDListForCriteria(performProgramVisitCriteria, 'encounterTypeUuid');
-        const encounters = queryGeneralEncounter ? this.db.objects(Encounter.schema.name)
-            .filtered('earliestVisitDateTime <= $0 ' +
-                'AND maxVisitDateTime >= $1 ' +
-                'AND encounterDateTime = null ' +
-                'AND cancelDateTime = null ' +
-                'AND individual.voided = false ' +
-                'AND voided = false ',
-                dateMidnight,
-                dateMorning)
-            .filtered((_.isEmpty(encounterCriteria) ? 'uuid != null' : `${encounterCriteria}`))
-            .map((enc) => {
+        let encounters = [];
+        if (queryGeneralEncounter) {
+            encounters = this.db.objects(Encounter.schema.name)
+                .filtered('earliestVisitDateTime <= $0 ' +
+                    'AND maxVisitDateTime >= $1 ' +
+                    'AND encounterDateTime = null ' +
+                    'AND cancelDateTime = null ' +
+                    'AND individual.voided = false ' +
+                    'AND voided = false ',
+                    dateMidnight,
+                    dateMorning);
+            if (!_.isEmpty(encounterCriteria))
+                encounters = encounters.filtered(encounterCriteria);
+            if (!_.isNil(addressFilter))
+                encounters = RealmQueryService.filterBasedOnAddress(Encounter.schema.name, encounters, addressFilter);
+
+            encounters = encounters.map((enc) => {
                 const individual = enc.individual;
                 const visitName = enc.name || enc.encounterType.operationalEncounterTypeName;
                 const earliestVisitDateTime = enc.earliestVisitDateTime;
@@ -239,17 +255,14 @@ class IndividualService extends BaseService {
                         allow: !privilegeService.hasEverSyncedGroupPrivileges() || privilegeService.hasAllPrivileges() || _.includes(allowedGeneralEncounterTypeUuidsForPerformVisit, enc.encounterType.uuid)
                     }
                 };
-            }) : [];
+            });
+        }
         const allEncounters = [...
             [...programEncounters, ...encounters]
                 .reduce(this._uniqIndividualWithVisitName, new Map())
                 .values()
         ];
         return allEncounters;
-    }
-
-    allScheduledVisitsCount() {
-        return this.allScheduledVisitsIn().length;
     }
 
     withScheduledVisits(program, addressLevel, encounterType) {
@@ -276,7 +289,7 @@ class IndividualService extends BaseService {
         return this.withScheduledVisits(program, addressLevel, encounterType).length;
     }
 
-    allOverdueVisitsIn(date, programEncounterCriteria, encounterCriteria, queryProgramEncounter = true, queryGeneralEncounter = true) {
+    allOverdueVisitsIn(date, reportFilters, programEncounterCriteria, encounterCriteria, queryProgramEncounter = true, queryGeneralEncounter = true) {
         const privilegeService = this.getService(PrivilegeService);
         const performProgramVisitCriteria = `privilege.name = '${Privilege.privilegeName.performVisit}' AND privilege.entityType = '${Privilege.privilegeEntityType.encounter}'`;
         const allowedProgramEncounterTypeUuidsForPerformVisit = privilegeService.allowedEntityTypeUUIDListForCriteria(performProgramVisitCriteria, 'programEncounterTypeUuid');
@@ -365,10 +378,6 @@ class IndividualService extends BaseService {
         return this._uniqIndividualsFrom(encounters);
     }
 
-    totalOverdueVisits(program, addressLevel, encounterType) {
-        return this.overdueVisits(program, addressLevel, encounterType).length;
-    }
-
     allCompletedVisitsIn(date, queryAdditions) {
         let fromDate = moment(date).startOf('day').toDate();
         let tillDate = moment(date).endOf('day').toDate();
@@ -386,7 +395,7 @@ class IndividualService extends BaseService {
             .map(_.identity);
     }
 
-    recentlyCompletedVisitsIn(date, programEncounterCriteria, encounterCriteria, queryProgramEncounter = true, queryGeneralEncounter = true) {
+    recentlyCompletedVisitsIn(date, reportFilters, programEncounterCriteria, encounterCriteria, queryProgramEncounter = true, queryGeneralEncounter = true) {
         let fromDate = moment(date).subtract(1, 'day').startOf('day').toDate();
         let tillDate = moment(date).endOf('day').toDate();
         const programEncounters = queryProgramEncounter ? this.db.objects(ProgramEncounter.schema.name)
@@ -440,7 +449,7 @@ class IndividualService extends BaseService {
             .map(_.identity);
     }
 
-    recentlyRegistered(date, addressQuery, programs = [], encounterTypes = []) {
+    recentlyRegistered(date, reportFilters, addressQuery, programs = [], encounterTypes = []) {
         let fromDate = moment(date).subtract(1, 'day').startOf('day').toDate();
         let tillDate = moment(date).endOf('day').toDate();
         let individuals = this.db.objects(Individual.schema.name)
@@ -475,7 +484,7 @@ class IndividualService extends BaseService {
             .map(_.identity);
     }
 
-    recentlyEnrolled(date, queryAdditions) {
+    recentlyEnrolled(date, reportFilters, queryAdditions) {
         let fromDate = moment(date).subtract(1, 'day').startOf('day').toDate();
         let tillDate = moment(date).endOf('day').toDate();
         return [...this.db.objects(ProgramEnrolment.schema.name)
@@ -526,10 +535,10 @@ class IndividualService extends BaseService {
         if (!this.showDueChecklistOnDashboard) {
             return {individual: [], checklistItemNames: []}
         }
-        return this.dueChecklists(date, queryAdditions);
+        return this.dueChecklists(date, [], queryAdditions);
     }
 
-    dueChecklists = (date, queryAdditions) => {
+    dueChecklists = (date, reportFilters, queryAdditions) => {
         const childEnrolments = this.db.objects(ProgramEnrolment.schema.name)
             .filtered('voided = false ' + 'AND individual.voided = false ' + 'AND program.name = $0', 'Child')
             .filtered((_.isEmpty(queryAdditions) ? 'uuid != null' : `${queryAdditions}`));
@@ -571,60 +580,21 @@ class IndividualService extends BaseService {
         return this.completedVisits(program, addressLevel, encounterType, tillDate).length;
     }
 
-    allHighRiskPatients(addressLevel) {
-        const HIGH_RISK_CONCEPTS = ["High Risk Conditions", "Adolescent Vulnerabilities"];
-        let allEnrolments = this.db.objects(ProgramEnrolment.schema.name);
-        if (!_.isNil(addressLevel))
-            allEnrolments = allEnrolments.filtered('individual.lowestAddressLevel.uuid = $0', addressLevel.uuid);
-        return allEnrolments.filter((enrolment) => HIGH_RISK_CONCEPTS
-            .some((concept) => !_.isEmpty(enrolment.findObservation(concept))))
-            .map((enrolment) => {
-                return _.assignIn({}, enrolment.individual, {addressUUID: enrolment.individual.lowestAddressLevel.uuid});
-            });
-    }
-
-    allHighRiskPatientCount() {
-        return this.allHighRiskPatients().length;
-    }
-
-    highRiskPatients(program, addressLevel) {
-        const HIGH_RISK_CONCEPTS = ["High Risk Conditions", "Adolescent Vulnerabilities"];
-        let allEnrolments = this.db.objects(ProgramEnrolment.schema.name)
-            .filtered("program.uuid = $0 " +
-                "AND individual.lowestAddressLevel.uuid = $1 ",
-                program.uuid,
-                addressLevel.uuid);
-        return allEnrolments.filter((enrolment) => HIGH_RISK_CONCEPTS
-            .some((concept) => !_.isEmpty(enrolment.findObservationInEntireEnrolment(concept))))
-            .map((enrolment) => enrolment.individual);
-    }
-
-    atRiskFilter(atRiskConcepts) {
-        return (individuals) => individuals.filter((individual) => {
-            const ind = _.isNil(individual.visitInfo) ? individual : individual.individual;
-            return ind.nonVoidedEnrolments().some((enrolment) => atRiskConcepts.length === 0 || atRiskConcepts
-                .some(concept => enrolment.observationExistsInEntireEnrolment(concept.name)))
-        });
-    }
-
-    notAtRiskFilter(atRiskConcepts) {
-        return (individuals) => individuals.filter((individual) => {
-            const ind = _.isNil(individual.visitInfo) ? individual : individual.individual;
-            return !ind.nonVoidedEnrolments().some((enrolment) => atRiskConcepts.length === 0 || atRiskConcepts
-                .some(concept => enrolment.observationExistsInEntireEnrolment(concept.name)))
-        });
-    }
-
-    totalHighRisk(program, addressLevel) {
-        return this.highRiskPatients(program, addressLevel).length;
-    }
-
-
-    voidUnVoidIndividual(individualUUID, setVoided) {
+    voidUnVoidIndividual(individualUUID, setVoided, groupAffiliation) {
         const individual = this.findByUUID(individualUUID);
         let individualClone = individual.cloneForEdit();
         individualClone.voided = setVoided;
-        this.register(individualClone);
+        const groupSubjectObservations = this.updateGroupSubjectVoidedStatus(groupAffiliation, setVoided);
+        this.register(individualClone, [], undefined, groupSubjectObservations);
+    }
+
+    updateGroupSubjectVoidedStatus(groupAffiliation, setVoided) {
+        const groupSubjectObservations = groupAffiliation.groupSubjectObservations.map(grpSubject => {
+            const clonedGrpSubject = {groupSubject: grpSubject.groupSubject.cloneForEdit()};
+            clonedGrpSubject.groupSubject.voided = setVoided;
+            return clonedGrpSubject;
+        }) || [];
+        return groupSubjectObservations;
     }
 
     determineSubjectForVisitToBeScheduled(individual, nextScheduledVisit) {
@@ -636,19 +606,21 @@ class IndividualService extends BaseService {
         nextScheduledVisits.map(nsv => {
             if ((!_.isEmpty(nsv.subjectUUID) && individual.uuid !== nsv.subjectUUID) ||
                 (!_.isEmpty(nsv.programEnrolment) && individual.uuid !== nsv.programEnrolment.individual.uuid)) {
+                const subject = !_.isEmpty(nsv.programEnrolment) ? nsv.programEnrolment.individual : this.findByUUID(nsv.subjectUUID);
                 try {
-                    const subject = !_.isEmpty(nsv.programEnrolment) ? nsv.programEnrolment.individual : this.findByUUID(nsv.subjectUUID);
                     if (_.isEmpty(subject)) {
                         throw Error(`Attempted to schedule visit for non-existent subject with uuid ${nsv.subjectUUID}`)
                     }
                     if (!this.unVoided(subject)) {
-                        throw Error(`Attempted to schedule visit for voided subject with uuid: ${nsv.subjectUUID}`);
+                        throw Error(`Attempted to schedule visit for voided subject with uuid: ${subject.uuid}`);
                     }
                     nsv.subject = subject;
                     filteredNextScheduledVisits.push(nsv);
                 } catch (e) {
                     General.logDebug("Rule-Failure", `Error while saving visit schedule for other subject: ${nsv.subjectUUID}`);
-                    this.getService(RuleEvaluationService).saveFailedRules(e, nsv.subjectUUID, individual.uuid);
+                    const subjectTypeUUID = _.isEmpty(subject) ? individual.subjectType.uuid : subject.subjectType.uuid;
+                    this.getService(RuleEvaluationService).saveFailedRules(e, subjectTypeUUID, individual.uuid,
+                        'VisitSchedule', individual.subjectType.uuid, !_.isEmpty(nsv.programEnrolment) ? 'ProgramEncounter' : 'Encounter', nsv.uuid);
                 }
             } else {
                 //not setting nsv.subject here to differentiate these from visits being scheduled for other subjects

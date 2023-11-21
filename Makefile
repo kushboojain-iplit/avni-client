@@ -132,6 +132,7 @@ as_prerelease_dev: ; $(call _create_config,prerelease_dev)
 as_perf: ; $(call _create_config,perf)
 as_prod: ; $(call _create_config,prod)
 as_prod_dev: ; $(call _create_config,prod_dev)
+as_no_env: ; $(call _create_config,no_env)
 
 release_clean: ## If you get dex errors
 	rm -rf packages/openchs-android/android/app/build
@@ -151,12 +152,15 @@ create_bundle:
 	cd packages/openchs-android; npx react-native bundle --platform android --dev false --entry-file index.android.js --bundle-output android/app/src/main/assets/index.android.bundle --assets-dest android/app/src/main/res/ && rm -rf android/app/src/main/res/drawable-* && rm -rf android/app/src/main/res/raw/*
 	cd packages/openchs-android/android; GRADLE_OPTS="$(if $(GRADLE_OPTS),$(GRADLE_OPTS),-Xmx1024m -Xms1024m)" ./gradlew bundle$(flavor)Release --stacktrace --w
 
-release: release_clean metro_config create_apk upload-release-sourcemap
-bundle_release: release_clean metro_config create_bundle upload-release-sourcemap
+release: release_clean metro_config create_apk
+bundle_release: release_clean metro_config create_bundle
 release_dev: setup_hosts as_dev release
 
 release_prod_without_clean: as_prod release upload-release-sourcemap
+release_prod_dev_without_clean: as_prod_dev release
 release_prod: renew_env release_prod_without_clean
+
+release_prod_dev_without_clean: as_prod_dev release upload-release-sourcemap
 
 bundle_release_prod_without_clean: as_prod bundle_release upload-release-sourcemap
 bundle_release_prod: renew_env bundle_release_prod_without_clean
@@ -185,13 +189,26 @@ release_prod_all_flavors: bundle_clean
 release_staging_playstore_without_clean: as_staging release
 release_staging_playstore: renew_env release_staging_playstore_without_clean
 
+release_prod_dev_universal_without_clean:
+	enableSeparateBuildPerCPUArchitecture=false make release_prod_dev_without_clean
+
 release_prod_universal_without_clean:
-	enableSeparateBuildPerCPUArchitecture=false make release_prod
+	enableSeparateBuildPerCPUArchitecture=false make release_prod_without_clean
 
 release_prod_universal:
 	enableSeparateBuildPerCPUArchitecture=false make release_prod
 
+release_no_env: as_no_env release
+
+release_no_env_universal_without_clean:
+	enableSeparateBuildPerCPUArchitecture=false make release_no_env
+
+release_no_env_universal:  renew_env release_no_env_universal_without_clean
+
 release_staging_without_clean: as_staging
+	enableSeparateBuildPerCPUArchitecture=false make release
+
+release_staging_dev_without_clean: as_staging_dev
 	enableSeparateBuildPerCPUArchitecture=false make release
 
 release_staging: renew_env release_staging_without_clean
@@ -204,6 +221,11 @@ release_uat: renew_env release_uat_without_clean
 release_prerelease_without_clean: as_prerelease
 	$(call _create_config,prerelease)
 	enableSeparateBuildPerCPUArchitecture=false make release
+
+release_prerelease_dev_without_clean: as_prerelease_dev
+	$(call _create_config,prerelease_dev)
+	enableSeparateBuildPerCPUArchitecture=false make release
+
 release_prerelease: renew_env release_prerelease_without_clean
 
 release_perf_without_clean: as_perf
@@ -365,6 +387,7 @@ upload-prod-apk-unsigned: ; $(call _upload_apk,prod)
 upload-staging-apk: ; $(call _upload_apk,staging)
 upload-prerelease-apk: ; $(call _upload_apk,prerelease)
 upload-uat-apk: ; $(call _upload_apk,uat)
+upload-prod_dev-apk: ; $(call _upload_apk,prod_dev)
 
 define _inpremise_upload_prod_apk
 	@aws s3 cp --acl public-read packages/openchs-android/android/app/build/outputs/apk/release/app-release.apk s3://samanvay/openchs/$(orgname)/apks/prod-$(sha)-$(dat).apk;
@@ -386,6 +409,14 @@ username:=
 password:=
 
 auth:
+ifndef username
+	@echo "Provde the variable username"
+	exit 1
+endif
+ifndef password
+	@echo "Provde the variable password"
+	exit 1
+endif
 	$(if $(password),$(eval token:=$(shell node packages/openchs-android/scripts/token.js '$(server):$(port)' $(username) $(password))))
 
 get-token: auth

@@ -4,7 +4,7 @@ import BaseService from "./BaseService";
 import EntityService from "./EntityService";
 import EntitySyncStatusService from "./EntitySyncStatusService";
 import SettingsService from "./SettingsService";
-import {EntityMetaData, EntitySyncStatus, RuleFailureTelemetry, SyncTelemetry, Individual} from 'openchs-models';
+import {EntityMetaData, EntitySyncStatus, RuleFailureTelemetry, SyncTelemetry, Individual, UserInfo} from 'openchs-models';
 import EntityQueueService from "./EntityQueueService";
 import MessageService from "./MessageService";
 import RuleEvaluationService from "./RuleEvaluationService";
@@ -28,6 +28,10 @@ import TaskUnAssignmentService from "./task/TaskUnAssignmentService";
 import UserSubjectAssignmentService from "./UserSubjectAssignmentService";
 import moment from "moment";
 import AllSyncableEntityMetaData from "../model/AllSyncableEntityMetaData";
+import ProgramConfigService from './ProgramConfigService';
+import {IndividualSearchActionNames as IndividualSearchActions} from '../action/individual/IndividualSearchActions';
+import {LandingViewActionsNames as LandingViewActions} from '../action/LandingViewActions';
+import {MyDashboardActionNames} from '../action/mydashboard/MyDashboardActions';
 
 @Service("syncService")
 class SyncService extends BaseService {
@@ -75,7 +79,10 @@ class SyncService extends BaseService {
             .then(() => Promise.resolve(progressBarStatus.onSyncComplete()))
             .then(() => Promise.resolve(this.logSyncCompleteEvent(syncStartTime)))
             .then(() => this.clearDataIn([RuleFailureTelemetry]))
-            .then(() => this.downloadNewsImages());
+            .then(() => this.downloadNewsImages())
+          .then(() => {
+              return updatedSyncSource;
+          });
 
         // Even blank dataServerSync with no data in or out takes quite a while.
         // Don't do it twice if no image sync required
@@ -102,8 +109,8 @@ class SyncService extends BaseService {
     }
 
     wasLastCompletedFullSyncDoneMoreThan12HoursAgo() {
-        let lastSynced = this.getService("syncTelemetryService").getAllCompletedFullSyncsSortedByDescSyncEndTime();
-        return !_.isEmpty(lastSynced) && moment(lastSynced[0].syncEndTime).add(12, 'hours').isBefore(moment());
+        let lastSynced = this.getService("syncTelemetryService").getLatestCompletedFullSync();
+        return !_.isEmpty(lastSynced) && moment(lastSynced.syncEndTime).add(12, 'hours').isBefore(moment());
     }
 
     logSyncCompleteEvent(syncStartTime) {
@@ -180,8 +187,9 @@ class SyncService extends BaseService {
 
         const entitiesWithoutSubjectMigrationAndResetSync = _.filter(allEntitiesMetaData, ({entityName}) => !_.includes(['ResetSync', 'SubjectMigration'], entityName));
         const filteredMetadata = _.filter(entitiesWithoutSubjectMigrationAndResetSync, ({entityName}) => _.find(syncDetails, sd => sd.entityName === entityName));
-        const filteredRefData = this.getMetadataByType(filteredMetadata, "reference");
+        const referenceEntityMetadata = this.getMetadataByType(filteredMetadata, "reference");
         const filteredTxData = this.getMetadataByType(filteredMetadata, "tx");
+        const userInfoData = _.filter(filteredMetadata, ({entityName}) => entityName === "UserInfo");
         const subjectMigrationMetadata = _.filter(allEntitiesMetaData, ({entityName}) => entityName === "SubjectMigration");
         const currentVersionEntitySyncDetails = this.retainEntitiesPresentInCurrentVersion(syncDetails, allEntitiesMetaData);
         General.logDebug("SyncService", `Entities to sync ${_.map(currentVersionEntitySyncDetails, ({entityName, entityTypeUuid}) => [entityName, entityTypeUuid])}`);
@@ -189,7 +197,8 @@ class SyncService extends BaseService {
 
         let syncDetailsWithPrivileges;
         return Promise.resolve(statusMessageCallBack("downloadForms"))
-            .then(() => this.getRefData(filteredRefData, onProgressPerEntity, now))
+            .then(() => this.getTxData(userInfoData, onProgressPerEntity, syncDetails, endDateTime))
+            .then(() => this.getRefData(referenceEntityMetadata, onProgressPerEntity, now, endDateTime))
             .then(() => this.getService(EncryptionService).encryptOrDecryptDbIfRequired())
             .then(() => syncDetailsWithPrivileges = this.updateAsPerNewPrivilege(allEntitiesMetaData, updateProgressSteps, currentVersionEntitySyncDetails))
             .then(() => statusMessageCallBack("downloadNewDataFromServer"))
@@ -308,7 +317,7 @@ class SyncService extends BaseService {
             this.getService(UserSubjectAssignmentService).deleteUnassignedSubjectsAndDependents(entities);
         }
 
-        General.logDebugTemp("SyncService", `${entityMetaData.entityName} ${entityMetaData.syncStatus.entityTypeUuid}`);
+        General.logDebug("SyncService", `Syncing - ${entityMetaData.entityName} with subType: ${entityMetaData.syncStatus.entityTypeUuid}`);
         const currentEntitySyncStatus = this.entitySyncStatusService.get(entityMetaData.entityName, entityMetaData.syncStatus.entityTypeUuid);
         const entitySyncStatus = new EntitySyncStatus();
         entitySyncStatus.entityName = entityMetaData.entityName;
@@ -346,6 +355,31 @@ class SyncService extends BaseService {
         this.ruleEvaluationService.init();
         this.messageService.init();
         this.ruleService.init();
+    }
+
+    resetServicesAfterFullSyncCompletion(updatedSyncSource) {
+        if (updatedSyncSource !== SyncService.syncSources.ONLY_UPLOAD_BACKGROUND_JOB) {
+            General.logInfo("Sync", "Full Sync completed, performing reset")
+            setTimeout(() => this.reset(false), 1);
+            this.getService(SettingsService).initLanguages();
+            General.logInfo("Sync", 'Full Sync completed, reset completed');
+        }
+    }
+
+    reset(syncRequired: false) {
+        this.context.getService(RuleEvaluationService).init();
+        this.context.getService(ProgramConfigService).init();
+        this.context.getService(MessageService).init();
+        this.context.getService(RuleService).init();
+        this.dispatchAction('RESET');
+        this.context.getService(PrivilegeService).deleteRevokedEntities(); //Invoking this in MenuView.deleteData as well
+
+        //To load subjectType after sync
+        this.dispatchAction(IndividualSearchActions.ON_LOAD);
+        this.dispatchAction(MyDashboardActionNames.ON_LOAD); //Invoking this after full sync reset as well
+
+        //To re-render LandingView after sync
+        this.dispatchAction(LandingViewActions.ON_LOAD, {syncRequired});
     }
 }
 
