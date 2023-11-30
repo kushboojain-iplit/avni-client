@@ -3,6 +3,7 @@ package com.openchsclient;
 import android.content.Intent;
 
 import com.example.abha_create_verify.MainActivity;
+import com.example.abha_create_verify.AadhaarQRScanActivity;
 import com.facebook.react.bridge.ReactApplicationContext;
 import com.facebook.react.bridge.ReactContextBaseJavaModule;
 import com.facebook.react.bridge.ReactMethod;
@@ -37,4 +38,13 @@ public class Module extends ReactContextBaseJavaModule {
         intent.putExtra("existingABHANumbers", stringArray);
         reactApplicationContext.startActivity(intent);
     }
+
+   @ReactMethod
+   public void invokeAadhaarQRScan() {
+       ReactApplicationContext reactApplicationContext = getReactApplicationContext();
+
+       Intent intent = new Intent(reactApplicationContext, AadhaarQRScanActivity.class);
+       intent.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK);
+       reactApplicationContext.startActivity(intent);
+   }
 }

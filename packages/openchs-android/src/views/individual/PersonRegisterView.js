@@ -1,4 +1,4 @@
-import {ToastAndroid, ScrollView, Button, NativeModules} from "react-native";
+import {ToastAndroid, ScrollView, Button, NativeModules, View} from "react-native";
 import PropTypes from 'prop-types';
 import React from "react";
 import AbstractComponent from "../../framework/view/AbstractComponent";
@@ -157,6 +157,10 @@ class PersonRegisterView extends AbstractComponent {
         Module.invoke(authToken, abhaNumbers, settings.getHipBaseURL());
     }
 
+    invokeAadhaarQRScan = () => {
+        Module.invokeAadhaarQRScan();
+    }
+
     isButtonDisabled = () => {
         const { individual } = this.state;
         if (individual?.that?.observations) {
@@ -190,6 +194,9 @@ class PersonRegisterView extends AbstractComponent {
                         paddingHorizontal: Distances.ScaledContentDistanceFromEdge
                     }}>
                      <Button title="Register with ABHA >>" onPress={this.invokeModule} style={{marginBottom: 50}} disabled={this.isButtonDisabled()}/>
+                     <View style={{ marginTop: 10 }}>
+                        <Button title="Register with Aadhaar QR >>" onPress={this.invokeAadhaarQRScan} />
+                     </View>
                         <GeolocationFormElement
                             actionName={Actions.REGISTRATION_SET_LOCATION}
                             errorActionName={Actions.SET_LOCATION_ERROR}
