@@ -19,9 +19,10 @@ import Distances from '../primitives/Distances';
 import ObservationsSectionOptions from '../common/ObservationsSectionOptions';
 import TypedTransition from '../../framework/routing/TypedTransition';
 import CompletedEncountersView from '../../encounter/CompletedEncountersView';
-import CollapsibleEncounters from './CollapsibleEncounters';
+import CollapsibleEncounter from './CollapsibleEncounter';
 import PrivilegeService from '../../service/PrivilegeService';
 import ListViewHelper from '../../utility/ListViewHelper';
+import UserInfoService from "../../service/UserInfoService";
 
 class PreviousEncounters extends AbstractComponent {
     static propTypes = {
@@ -41,7 +42,9 @@ class PreviousEncounters extends AbstractComponent {
         onToggleAction: PropTypes.string,
         containsDrafts: PropTypes.bool,
         deleteDraft: PropTypes.func,
-        hideIfEmpty: PropTypes.bool
+        hideIfEmpty: PropTypes.bool,
+        onEdit: PropTypes.func,
+        onEditEncounterActionName: PropTypes.string
     };
 
     constructor(props, context) {
@@ -53,20 +56,32 @@ class PreviousEncounters extends AbstractComponent {
         encounter = encounter.cloneForEdit();
         const editing = !encounter.isScheduled();
         encounter.encounterDateTime = _.isNil(encounter.encounterDateTime) ? new Date() : encounter.encounterDateTime;
-        CHSNavigator.navigateToEncounterView(this, {encounter, editing});
+        if (_.isNil(this.props.onEditEncounterActionName))
+            CHSNavigator.navigateToEncounterView(this, {encounter, editing});
+        else
+            this.dispatchAction(this.props.onEditEncounterActionName, {
+                encounter,
+                onEncounterEditAllowed: () => CHSNavigator.navigateToEncounterView(this, {encounter, editing})
+            });
     }
 
     cancelEncounter(encounter) {
-        CHSNavigator.navigateToEncounterView(this, {encounter, cancel: true});
+        if (_.isNil(this.props.onEditEncounterActionName))
+            CHSNavigator.navigateToEncounterView(this, {encounter, cancel: true})
+        else
+            this.dispatchAction(this.props.onEditEncounterActionName, {
+                encounter,
+                onEncounterEditAllowed: () => CHSNavigator.navigateToEncounterView(this, {encounter, cancel: true})
+            });
     }
 
     cancelVisitAction(encounter, textColor) {
         const encounterService = this.context.getService(EncounterService);
-        if (encounterService.isEncounterTypeCancellable(encounter) && (!this.privilegeService.hasEverSyncedGroupPrivileges() || this.privilegeService.hasAllPrivileges() || _.includes(this.props.allowedEncounterTypeUuidsForCancelVisit, encounter.encounterType.uuid))) return new ContextAction('cancelVisit', () => this.cancelEncounter(encounter), textColor);
+        if (encounterService.isEncounterTypeCancellable(encounter) && (this.privilegeService.hasAllPrivileges() || _.includes(this.props.allowedEncounterTypeUuidsForCancelVisit, encounter.encounterType.uuid))) return new ContextAction('cancelVisit', () => this.cancelEncounter(encounter), textColor);
     }
 
     hasEditPrivilege(encounter) {
-        return !this.privilegeService.hasEverSyncedGroupPrivileges() || this.privilegeService.hasAllPrivileges() || _.includes(this.props.allowedEncounterTypeUuidsForEditVisit, encounter.encounterType.uuid);
+        return this.privilegeService.hasAllPrivileges() || _.includes(this.props.allowedEncounterTypeUuidsForEditVisit, encounter.encounterType.uuid);
     }
 
     isEditAllowed(encounter) {
@@ -78,7 +93,7 @@ class PreviousEncounters extends AbstractComponent {
     }
 
     addScheduledEncounterActions(encounter, actionName, textColor, actions, isDraftEncounter) {
-        if (isDraftEncounter || !this.privilegeService.hasEverSyncedGroupPrivileges() || this.privilegeService.hasAllPrivileges() || _.includes(this.props.allowedEncounterTypeUuidsForPerformVisit, encounter.encounterType.uuid)) {
+        if (isDraftEncounter || this.privilegeService.hasAllPrivileges() || _.includes(this.props.allowedEncounterTypeUuidsForPerformVisit, encounter.encounterType.uuid)) {
             actions.push(new ContextAction(actionName, () => this.editEncounter(encounter), textColor));
         }
         return actions;
@@ -129,9 +144,10 @@ class PreviousEncounters extends AbstractComponent {
             this.addDeleteDraftAction(encounter, this.I18n.t('delete'), Colors.ValidationError, actions);
         }
         this.addScheduledEncounterActions(encounter, this.I18n.t('do'), Colors.ScheduledVisitColor, actions, containsDrafts);
+        const canEditEncounter = this.privilegeService.hasAllPrivileges() || _.includes(this.props.allowedEncounterTypeUuidsForPerformVisit, encounter.encounterType.uuid);
         return <View>
             <TouchableOpacity
-                onPress={() => !this.privilegeService.hasEverSyncedGroupPrivileges() || this.privilegeService.hasAllPrivileges() || _.includes(this.props.allowedEncounterTypeUuidsForPerformVisit, encounter.encounterType.uuid) ? this.editEncounter(encounter) : _.noop()}>
+                onPress={() => canEditEncounter ? this.editEncounter(encounter) : _.noop()}>
                 {containsDrafts && (<View style={{flexDirection: 'row', justifyContent: 'flex-end'}}>
                     {this.badge(this.I18n.t('draft'), Colors.WarningButtonColor)}
                 </View>)}
@@ -148,8 +164,13 @@ class PreviousEncounters extends AbstractComponent {
     }
 
     renderTitleAndDetails(encounter) {
+        const filledBy = this.getService(UserInfoService).getUserName(encounter.filledByUUID, encounter.filledBy, this.I18n);
         const visitName = `${_.isNil(encounter.name) ? this.I18n.t(encounter.encounterType.displayName) : this.I18n.t(encounter.name)}`;
         const primaryDate = encounter.encounterDateTime || encounter.cancelDateTime || encounter.earliestVisitDateTime;
+        const filledByMessage = _.isNil(filledBy) ? `${General.toDisplayDate(primaryDate)}` : `${this.I18n.t("byOn", {
+            user: filledBy,
+            date: General.toDisplayDate(primaryDate)
+        })}`;
         const secondaryDate = !encounter.isScheduled() ? <Text style={{
                 fontSize: Fonts.Small,
                 color: Colors.SecondaryText
@@ -160,7 +181,7 @@ class PreviousEncounters extends AbstractComponent {
                 style={{flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', flexWrap: 'wrap'}}>
                 <View style={{flexDirection: 'column'}}>
                     <Text style={{fontSize: Fonts.Normal}}>{visitName}</Text>
-                    <Text style={{fontSize: Fonts.Small}}>{General.toDisplayDate(primaryDate)}</Text>
+                    <Text style={{fontSize: Fonts.Small, color: Colors.SecondaryText}}>{filledByMessage}</Text>
                     {secondaryDate}
                 </View>
                 {this.renderStatus(encounter)}
@@ -178,7 +199,7 @@ class PreviousEncounters extends AbstractComponent {
                 subjectInfo: this.props.subjectInfo,
                 formType: this.props.formType,
                 cancelFormType: this.props.cancelFormType,
-                isEditAllowed: (encounter) => this.isEditAllowed(encounter),
+                isEditAllowed: (encounter) => this.isEditAllowed(encounter)
             }).to(CompletedEncountersView)}
             style={styles.viewAllContainer}>
             <View style={{flexDirection: 'row', alignItems: 'center'}}>
@@ -201,9 +222,9 @@ class PreviousEncounters extends AbstractComponent {
         }
         const dataSource = ListViewHelper.getDataSource(toDisplayEncounters);
         const renderable = (<View>
-            <View style={{flexDirection: 'row', alignItems: 'center'}}>
+            <View style={{flexDirection: 'row', alignItems: 'center', backgroundColor: Styles.whiteColor}}>
                 {this.props.title && (
-                    <Text style={[Styles.cardTitle, {padding: Distances.ScaledContentDistanceFromEdge}]}>
+                    <Text style={[Styles.dashboardSubsectionTitleText, {paddingLeft: 10}]}>
                         {this.props.title}
                     </Text>
                 )}
@@ -225,14 +246,15 @@ class PreviousEncounters extends AbstractComponent {
                 removeClippedSubviews={true}
                 renderRow={(encounter) => <View style={styles.container}>
                     {this.props.expandCollapseView ?
-                        <CollapsibleEncounters encountersInfo={encounter}
-                                               onToggleAction={this.props.onToggleAction}
-                                               renderTitleAndDetails={() => this.renderTitleAndDetails(encounter.encounter)}
-                                               encounterActions={() => this.encounterActions(encounter.encounter)}
-                                               cancelVisitAction={() => this.cancelVisitAction(encounter.encounter)}
-                                               formType={this.props.formType}
-                                               cancelFormType={this.props.cancelFormType}
-                                               isEditAllowed={() => this.isEditAllowed(encounter.encounter)}
+                        <CollapsibleEncounter encountersInfo={encounter}
+                                              onToggleAction={this.props.onToggleAction}
+                                              renderTitleAndDetails={() => this.renderTitleAndDetails(encounter.encounter)}
+                                              encounterActions={() => this.encounterActions(encounter.encounter)}
+                                              cancelVisitAction={() => this.cancelVisitAction(encounter.encounter)}
+                                              formType={this.props.formType}
+                                              cancelFormType={this.props.cancelFormType}
+                                              isEditAllowed={() => this.isEditAllowed(encounter.encounter)}
+                                              formElementGroupEditAction={this.props.onEditEncounterActionName}
                         />
                         : this.renderNormalView(encounter)}
                 </View>}
@@ -253,9 +275,11 @@ const styles = StyleSheet.create({
     container: {
         padding: Distances.ScaledContentDistanceFromEdge,
         margin: 4,
-        elevation: 2,
-        backgroundColor: Colors.cardBackgroundColor,
-        marginVertical: 3
+        backgroundColor: Styles.greyBackground,
+        marginVertical: 3,
+        borderWidth: 2,
+        borderColor: Styles.greyBackground,
+        borderRadius: 10
     },
     viewAllContainer: {
         right: Distances.ScaledContentDistanceFromEdge,

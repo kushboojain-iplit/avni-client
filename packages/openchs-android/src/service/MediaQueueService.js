@@ -1,9 +1,9 @@
 import BaseService from "./BaseService";
 import Service from "../framework/bean/Service";
-import {Encounter, Individual, MediaQueue, ProgramEncounter, ProgramEnrolment} from 'avni-models';
+import {Encounter, Individual, MediaQueue, ProgramEncounter, ProgramEnrolment} from 'openchs-models';
 import General from "../utility/General";
 import _ from 'lodash';
-import {get} from '../framework/http/requests';
+import {get, isHttpRequestSuccessful} from '../framework/http/requests';
 import RNFetchBlob from 'rn-fetch-blob';
 import FileSystem from "../model/FileSystem";
 import fs from 'react-native-fs';
@@ -12,6 +12,18 @@ import EncounterService from "./EncounterService";
 import ProgramEncounterService from "./program/ProgramEncounterService";
 import ProgramEnrolmentService from "./ProgramEnrolmentService";
 import * as mime from 'react-native-mime-types';
+import moment from "moment";
+import I18n from 'i18n-js';
+import ErrorUtil from "../framework/errorHandling/ErrorUtil";
+const PARALLEL_UPLOAD_COUNT = 1;
+
+function checkUploadStatus(response, mediaDisplayText) {
+    const statusCode = response.info().status;
+    if (!isHttpRequestSuccessful(statusCode)) {
+        throw new Error("Media upload failed. HTTP Status:" + statusCode + ". " + mediaDisplayText);
+    }
+    General.logDebug('MediaQueueService', `Upload of ${mediaDisplayText} done`);
+}
 
 @Service("mediaQueueService")
 class MediaQueueService extends BaseService {
@@ -114,10 +126,8 @@ class MediaQueueService extends BaseService {
             }, RNFetchBlob.wrap(this.getAbsoluteFileName(mediaQueueItem)));
 
         let jobTimeoutHandler = this.cancelUploadIfNoProgress(new Date(), uploadTask, mediaQueueItem.fileName)
-        uploadTask
-            .then(() => {
-                General.logDebug('MediaQueueService', `Upload of ${mediaQueueItem.uuid} - ${mediaQueueItem.fileName} done`);
-            })
+        const returnPromise = uploadTask
+            .then((x) => checkUploadStatus(x, mediaQueueItem.getDisplayText()))
             .finally(() => clearTimeout(jobTimeoutHandler));
 
         uploadTask.uploadProgress({interval: 1000},(sent, total) => {
@@ -125,7 +135,7 @@ class MediaQueueService extends BaseService {
             clearTimeout(jobTimeoutHandler);
             jobTimeoutHandler = this.cancelUploadIfNoProgress(new Date(), uploadTask, mediaQueueItem.fileName);
         });
-        return uploadTask;
+        return returnPromise;
     }
 
     cancelUploadIfNoProgress(lastProgressTime, uploadTask, fileName) {
@@ -144,7 +154,7 @@ class MediaQueueService extends BaseService {
             .uploadProgress((written, total) => {
                 General.logDebug("MediaQueueService", 'uploaded', written / total);
                 cb(written, total);
-            });
+            }).then((x) => checkUploadStatus(x, `${url}. ${fullFilePath}`));
     }
 
     deleteFile(mediaQueueItem) {
@@ -165,16 +175,16 @@ class MediaQueueService extends BaseService {
         }
         switch (mediaQueueItem.entityName) {
             case Individual.schema.name:
-                this.getService(IndividualService).register(entity);
+                this.getService(IndividualService).updateObservations(entity);
                 break;
             case Encounter.schema.name:
-                this.getService(EncounterService).saveOrUpdate(entity);
+                this.getService(EncounterService).updateObservations(entity);
                 break;
             case ProgramEncounter.schema.name:
-                this.getService(ProgramEncounterService).saveOrUpdate(entity);
+                this.getService(ProgramEncounterService).updateObservations(entity);
                 break;
             case ProgramEnrolment.schema.name:
-                Promise.resolve(this.getService(ProgramEnrolmentService).enrol(entity));
+                this.getService(ProgramEnrolmentService).updateObservations(entity);
                 break;
         }
     }
@@ -185,6 +195,8 @@ class MediaQueueService extends BaseService {
         // However, we need to find some way of highlighting this to user.
         const exists = await this.mediaExists(mediaQueueItem);
         if (!exists) {
+            // Note to Developers: We are missing media from the system,
+            // and in-order to highlight this to user, we should not clean up these dangling mediaQueueItems
             General.logDebug("MediaQueueService", `mediaQueueItem ${mediaQueueItem.fileName} does not exist. Ignoring...`);
             return;
         }
@@ -199,13 +211,8 @@ class MediaQueueService extends BaseService {
             .then(() => this.replaceObservation(mediaQueueItem, uploadUrl))
             .then(() => this.popItem(mediaQueueItem))
             .catch((error) => {
-                General.logError("MediaQueueService", `Error while uploading ${mediaQueueItem.uuid} - ${mediaQueueItem.fileName}`);
                 General.logError("MediaQueueService", error);
-                if (error.message === 'canceled') {
-                    return Promise.reject(new Error("syncTimeoutError"))
-                } else {
-                    return Promise.reject(error);
-                }
+                return Promise.reject(error);
             });
     }
 
@@ -213,26 +220,36 @@ class MediaQueueService extends BaseService {
         return this.findAll().length > 0;
     }
 
-    uploadMedia() {
-        // Parallel push to S3 ensures maximal usage of existing bandwidth.
-        // Return only once every media queue item upload succeeds or fails.
+    uploadMedia(statusMessageCallback) {
+        // Chunked push to S3 to minimize sync failures on low bandwidth.
+        // Stops on first chunk with error or when all chunks are processed successfully
         const mediaQueueItems = _.map(this.findAll(), (mediaQueueItem) => mediaQueueItem.clone());
         General.logDebug("MediaQueueService", `Number of media queue items: ${mediaQueueItems.length}`);
-        return Promise.allSettled(
-            _.map(mediaQueueItems,
-                (mediaQueueItem) => {
-                    return this.uploadMediaQueueItem(mediaQueueItem)
-                }
-            )
-        ).then(results => {
-                if (_.filter(results, result =>
-                   result.status === 'rejected'
-                ).length > 0) {
-                    return Promise.reject(new Error("syncTimeoutError"));
-                } else {
-                    return Promise.resolve();
-                }
-            });
+        const chunkedMediaQueueItems = _.chunk(mediaQueueItems, PARALLEL_UPLOAD_COUNT);
+        General.logInfo("MediaQueueService", `Upload batch size ${PARALLEL_UPLOAD_COUNT}`);
+        let startTime = moment.now();
+        let current = Promise.resolve();
+        let count = 0;
+        for (const mediaQueueItemsChunk of chunkedMediaQueueItems) {
+            current = current.then(() => Promise.all(
+                _.map(mediaQueueItemsChunk, (mediaQueueItem) => {
+                    if (statusMessageCallback) {
+                        statusMessageCallback(`${I18n.t("uploadMedia")} (${count}/${mediaQueueItems.length})`);
+                    }
+                    return this.uploadMediaQueueItem(mediaQueueItem);
+                })
+            )).then(() => {
+                count += PARALLEL_UPLOAD_COUNT
+                General.logInfo("MediaQueueService", `MediaUpload: Time taken ${(moment.now() - startTime)}`);
+                return Promise.resolve();
+            }).catch((error) => {
+                // notify bugsnag of the original underlying error, so we can check if there are multiple causes for failure
+                ErrorUtil.notifyBugsnag(error, "MediaQueueService");
+                return Promise.reject(new Error("syncTimeoutError"));
+            })
+        }
+        current.then(() => { General.logInfo("MediaQueueService",`MediaUpload:Total time taken ${(moment.now() - startTime)}`)})
+        return current;
     }
 }
 

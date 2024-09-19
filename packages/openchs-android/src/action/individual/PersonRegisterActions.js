@@ -17,13 +17,16 @@ import QuickFormEditingActions from "../common/QuickFormEditingActions";
 import TimerActions from "../common/TimerActions";
 import TaskService from "../../service/task/TaskService";
 import General from '../../utility/General';
+import moment from 'moment';
+import AddressLevelService from '../../service/AddressLevelService';
 
 export class PersonRegisterActions {
     static getInitialState(context) {
         const genders = context.get(EntityService).getAll(Gender.schema.name);
         const gendersSortedByName = _.sortBy(genders, "name");
-
-        return {genders: gendersSortedByName};
+        const state = new IndividualRegistrationState();
+        state.genders = gendersSortedByName;
+        return state;
     }
 
     static onLoad(state, action, context) {
@@ -67,7 +70,7 @@ export class PersonRegisterActions {
 
     static enterRegistrationDate(state, action) {
         const newState = state.clone();
-        newState.individual.registrationDate = new Date(action.value);
+        newState.individual.registrationDate = moment(new Date(action.value)).startOf('day').toDate();
         newState.handleValidationResult(newState.individual.validateRegistrationDate());
         return newState;
     }
@@ -159,9 +162,9 @@ export class PersonRegisterActions {
         return newState;
     }
 
-    static enterIndividualAddressLevel(state, action) {
+    static enterIndividualAddressLevel(state, action, context) {
         const newState = state.clone();
-        newState.individual.lowestAddressLevel = action.value;
+        newState.individual.lowestAddressLevel = action.value && context.get(AddressLevelService).findByUUID(action.value.uuid);
         newState.handleValidationResult(newState.individual.validateAddress());
         return newState;
     }

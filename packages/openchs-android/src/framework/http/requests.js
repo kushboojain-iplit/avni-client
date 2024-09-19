@@ -18,20 +18,21 @@ const getIdpType = async () => {
     return await settingsService.getSettings().idpType;
 }
 
+export function isHttpRequestSuccessful(responseCode) {
+    return ACCEPTABLE_RESPONSE_STATUSES.indexOf(responseCode) > -1;
+}
+
 const fetchFactory = (endpoint, method = "GET", params, fetchWithoutTimeout) => {
     const processResponse = (response) => {
         let responseCode = parseInt(response.status);
-        if (ACCEPTABLE_RESPONSE_STATUSES.indexOf(responseCode) > -1) {
+        if (isHttpRequestSuccessful(responseCode)) {
             return Promise.resolve(response);
         }
         if (responseCode === 403 || responseCode === 401) {
             General.logError("requests", response);
             return Promise.reject(new AuthenticationError('Http ' + responseCode, response));
         }
-        if (responseCode === 400) {
-            return Promise.reject(response);
-        }
-        return Promise.reject(new ServerError(`Http ${response.status}`, response));
+        return Promise.reject(new ServerError(response));
     };
     const requestInit = {"method": method, ...params};
     const doFetch = getXSRFPromise(endpoint).then((xsrfToken) => {

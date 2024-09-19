@@ -1,12 +1,103 @@
-import {StyleSheet, Text, TouchableOpacity, View} from "react-native";
-import React, {Fragment} from 'react';
-import Colors from "../primitives/Colors";
+import {SafeAreaView, StyleSheet, Text, TouchableOpacity, View} from "react-native";
+import React from 'react';
 import AbstractComponent from "../../framework/view/AbstractComponent";
 import General from "../../utility/General";
-import {Concept} from 'openchs-models';
+import {Concept, CustomFilter, DashboardFilterConfig, Range} from 'openchs-models';
 import AvniIcon from '../common/AvniIcon';
 import {FilterActionNames} from '../../action/mydashboard/FiltersActionsV2';
 import _ from 'lodash';
+import Styles from "../primitives/Styles";
+import Colors from '../primitives/Colors';
+
+function MultiValueFilterDisplay({labelTexts, filter}) {
+    return <View key={filter.name} style={{display: "flex", flexDirection: "row", flexWrap: "wrap"}}>
+        {labelTexts.map((labelText, index) => {
+            return <View style={{display: "flex", flexDirection: "row", flexWrap: "wrap", width: 320}}>
+                <Text style={{
+                    fontSize: 14,
+                    color: Styles.greyText,
+                    fontWeight: 'bold',
+                }}>{labelText.label} - </Text>
+                <Text style={{
+                    fontSize: 14,
+                    color: Styles.greyText
+                }}>{labelText.text}</Text>
+            </View>;
+        })}
+    </View>;
+}
+
+function FilterDisplay({filter, content}) {
+    return <View key={filter.name} style={{display: "flex", flexDirection: "row", flexWrap: "wrap"}}>
+        <Text style={{
+            fontSize: 14,
+            color: Styles.greyText,
+            fontWeight: 'bold',
+        }}>{filter.name} - </Text>
+        <Text style={{
+            fontSize: 14,
+            color: Styles.greyText
+        }}>{content}</Text>
+    </View>;
+}
+
+function getFiltersToDisplay(selectedFilterValues, filterUUIDsToIgnore, dashboard, filterConfigs) {
+    return Object.keys(selectedFilterValues).filter(filterUUID => !filterUUIDsToIgnore.includes(filterUUID))
+        .map((filterUUID) => {
+            const filter = dashboard.getFilter(filterUUID);
+            const inputDataType = filterConfigs[filterUUID].getInputDataType();
+            const filterType = filterConfigs[filterUUID].type;
+            const selectedFilterValue = selectedFilterValues[filterUUID];
+
+            General.logDebug("AppliedFiltersV2", "getFiltersToDisplay", inputDataType, filter.name, filterType);
+
+            if (filterType === CustomFilter.type.Address) {
+                const labelTexts = selectedFilterValue.map((x) => {return {label: x.type, text: x.name}});
+                return <MultiValueFilterDisplay filter={filter} labelTexts={labelTexts}/>;
+            }
+
+            switch (inputDataType) {
+                case Concept.dataType.Coded:
+                case DashboardFilterConfig.dataTypes.array:
+                    return !_.isEmpty(selectedFilterValue) &&
+                        <FilterDisplay filter={filter}
+                                       content={selectedFilterValue.map((x) => x.name).join(", ")}/>;
+                case Concept.dataType.Date:
+                    return !_.isNil(selectedFilterValue) && <FilterDisplay filter={filter}
+                                                                           content={General.toDisplayDate(selectedFilterValue)}/>
+                case Concept.dataType.DateTime:
+                    return !_.isNil(selectedFilterValue) && <FilterDisplay filter={filter}
+                                                                           content={General.formatDateTime(selectedFilterValue)}/>
+                case Concept.dataType.Time:
+                    return !_.isNil(selectedFilterValue) && <FilterDisplay filter={filter}
+                                                                           content={General.toDisplayTime(selectedFilterValue)}/>
+                case Range.DateRange:
+                    return !_.isNil(selectedFilterValue) && !selectedFilterValue.isEmpty() &&
+                        <FilterDisplay filter={filter}
+                                       content={`${General.toDisplayDate(selectedFilterValue.minValue)} - ${General.toDisplayDate(selectedFilterValue.maxValue)}`}/>
+                case DashboardFilterConfig.dataTypes.formMetaData:
+                    let labelTexts = [];
+                    if (selectedFilterValue.subjectTypes.length > 0) {
+                        const label = selectedFilterValue.subjectTypes.length > 1 ? "Subject Types" : "Subject Type";
+                        labelTexts.push({label: label, text: selectedFilterValue.subjectTypes.map(x => x.name).join(", ")});
+                    }
+                    if (selectedFilterValue.programs.length > 0) {
+                        const label = selectedFilterValue.programs.length > 1 ? "Programs" : "Program";
+                        labelTexts.push({label: label, text: selectedFilterValue.programs.map(x => x.name).join(", ")});
+                    }
+                    if (selectedFilterValue.encounterTypes.length > 0) {
+                        const label = selectedFilterValue.encounterTypes.length > 1 ? "Visits" : "Visit";
+                        labelTexts.push({label: label, text: selectedFilterValue.encounterTypes.map(x => x.name).join(", ")});
+                    }
+
+                    return labelTexts.length > 0 &&
+                        <MultiValueFilterDisplay filter={filter} labelTexts={labelTexts}/>;
+                default:
+                    return !_.isNil(selectedFilterValue) &&
+                        <FilterDisplay filter={filter} content={selectedFilterValue}/>;
+            }
+        });
+}
 
 export default class AppliedFiltersV2 extends AbstractComponent {
     static styles = StyleSheet.create({
@@ -16,9 +107,9 @@ export default class AppliedFiltersV2 extends AbstractComponent {
         },
         filterIcon: {
             zIndex: 1,
-            paddingTop: 2,
-            fontSize: 24,
-            color: Colors.FilterClear,
+            elevation: 2,
+            fontSize: 20,
+            color: Styles.accentColor,
             alignSelf: 'flex-end'
         },
     });
@@ -33,80 +124,32 @@ export default class AppliedFiltersV2 extends AbstractComponent {
         postClearAction();
     }
 
-    renderContent(label, content, contentSeparator) {
-        const separator = _.isNil(contentSeparator) ? '' : contentSeparator;
-        return <Text key={label}>
-            <Text style={{
-                fontSize: 14,
-                color: Colors.TextOnPrimaryColor,
-                fontWeight: 'bold',
-            }}>{label} - </Text>
-            <Text style={{
-                fontSize: 14,
-                color: Colors.TextOnPrimaryColor,
-            }}>{content}{separator}</Text>
-        </Text>
-    }
-
-    renderFilteredLocations() {
-        if (this.props.selectedLocations && this.props.selectedLocations.length > 0) {
-            let filteredSelectedLocations = this.props.selectedLocations;
-            filteredSelectedLocations = _.filter(filteredSelectedLocations, (locationObj =>  locationObj.isSelected));
-            const allUniqueTypes = _.uniqBy(_.map(filteredSelectedLocations, ({type}) => ({type})), 'type');
-            const content = allUniqueTypes.map((l, index) => this.renderContent(this.I18n.t(l.type),
-                _.get(_.groupBy(filteredSelectedLocations, 'type'), l.type, [])
-                  .map((locations) => this.I18n.t(locations.name)).join(", "),
-                index === filteredSelectedLocations.length - 1 ? ' ' : ' | '));
-            return <Text>{content}</Text>
-        }
-    }
-
-    renderCustomFilters() {
-        const readableTime = (dateType, value) => {
-            return (dateType && (dateType === Concept.dataType.Time) && General.toDisplayTime(value))
-            || (dateType && (dateType === Concept.dataType.DateTime) && General.formatDateTime(value))
-            || (dateType && (dateType === Concept.dataType.Date) && General.toDisplayDate(value))
-            || value;
-        }
-        const filterValue = (value) => [
-            this.I18n.t(value.name || value.value || readableTime(value.dateType, value.minValue) || ''),
-            this.I18n.t(value.maxValue && readableTime(value.dateType, value.maxValue) || '')
-        ].filter(Boolean).join(" to ");
-        if (!_.isEmpty(this.props.selectedCustomFilters)) {
-            const nonEmptyFilters = _.pickBy(this.props.selectedCustomFilters, (v, k) => !_.isEmpty(v));
-            const filters = Object.keys(nonEmptyFilters);
-            return _.map(filters, filter => {
-                const answers = nonEmptyFilters[filter].map(filterValue).join(", ");
-                return this.renderContent(this.I18n.t(filter), answers);
-            })
-        }
-    }
-
-    renderGenderFilters() {
-        if (!_.isEmpty(this.props.selectedGenders)) {
-            const genderNames = _.map(this.props.selectedGenders, gender => this.I18n.t(gender.name)).join(", ");
-            return this.renderContent(this.I18n.t('gender'), genderNames);
-        }
-    }
-
     render() {
-        return (
-          <Fragment>
-            {this.props.applied && <View>
-              <TouchableOpacity onPress={() => this.onClearFilter(this.props.postClearAction)}>
-                  <View>
-                      <AvniIcon name={'filter-remove-outline'}
-                                style={AppliedFiltersV2.styles.filterIcon}
-                                type='MaterialCommunityIcons'/>
-                  </View>
-              </TouchableOpacity>
-            </View>}
-            <View style={AppliedFiltersV2.styles.container}>
-                {this.renderFilteredLocations()}
-                {this.renderCustomFilters()}
-                {this.renderGenderFilters()}
+        const {hasFiltersSet, dashboard, selectedFilterValues, filterConfigs, filterUUIDsToIgnore} = this.props;
+        const filtersToDisplay = hasFiltersSet && getFiltersToDisplay(selectedFilterValues, filterUUIDsToIgnore, dashboard, filterConfigs);
+        const showAppliedFilters = filtersToDisplay && filtersToDisplay.length > 0 && _.some(filtersToDisplay, f => f);
+        return showAppliedFilters && (<View style={{
+                display: "flex",
+                padding: 5,
+                backgroundColor: Colors.GreyBackground,
+                borderRadius: 5,
+                marginHorizontal: 15
+            }}>
+                <SafeAreaView>
+                    <View>
+                        <TouchableOpacity style={{flex: 1, alignSelf: 'flex-end'}} onPress={() => this.onClearFilter(this.props.postClearAction)}>
+                            <View>
+                                <AvniIcon name={'filter-remove-outline'}
+                                          style={AppliedFiltersV2.styles.filterIcon}
+                                          type='MaterialCommunityIcons'/>
+                            </View>
+                        </TouchableOpacity>
+                    </View>
+                    <View style={AppliedFiltersV2.styles.container}>
+                        {filtersToDisplay}
+                    </View>
+                </SafeAreaView>
             </View>
-          </Fragment>
         );
     }
 }

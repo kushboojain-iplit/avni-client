@@ -7,6 +7,7 @@ import Icon from 'react-native-vector-icons/MaterialCommunityIcons';
 import Colors from "../primitives/Colors";
 import AbstractComponent from "../../framework/view/AbstractComponent";
 import ValidationErrorMessage from '../form/ValidationErrorMessage';
+import _ from "lodash";
 
 if (UIManager.setLayoutAnimationEnabledExperimental) {
     UIManager.setLayoutAnimationEnabledExperimental(true);
@@ -187,7 +188,7 @@ export default class AutocompleteSearch extends AbstractComponent {
     };
 
     render() {
-        const {selectedItems, isMulti , validationError} = this.props;
+        const {selectedItems, isMulti} = this.props;
         const {searchTerm} = this.state;
         return (
             <View style={{flexDirection: 'column'}}>

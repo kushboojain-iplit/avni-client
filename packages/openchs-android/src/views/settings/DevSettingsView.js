@@ -18,6 +18,10 @@ import RuleEvaluationService from "../../service/RuleEvaluationService";
 import {Rule} from 'openchs-models';
 import SelectableItemGroup from "../primitives/SelectableItemGroup";
 import UserInfoService from "../../service/UserInfoService";
+import moment from "moment";
+import DashboardCacheService from "../../service/DashboardCacheService";
+import {MyDashboardActionNames} from "../../action/mydashboard/MyDashboardActions";
+import CustomDashboardCacheService from "../../service/CustomDashboardCacheService";
 
 @Path('/devSettingsView')
 class DevSettingsView extends AbstractComponent {
@@ -63,6 +67,12 @@ class DevSettingsView extends AbstractComponent {
         this.context.getService(RuleEvaluationService).runOnAll(this.state.rulesToRun.map((r) => [r.name, r.rule]));
     }
 
+    clearDashboardCache() {
+        this.context.getService(DashboardCacheService).clear();
+        this.context.getService(CustomDashboardCacheService).resetAllDashboards();
+        this.dispatchAction(MyDashboardActionNames.ON_LOAD, {fetchFromDB: true});
+    }
+
     renderDevOptions() {
         if (__DEV__) {
             const {rulesToRun, settings} = this.state;
@@ -93,6 +103,19 @@ class DevSettingsView extends AbstractComponent {
                     <Text>Server URL:</Text>
                     <TextInput value={settings.serverURL} onChangeText={(text) => this.dispatchAction(Actions.ON_SERVER_URL_CHANGE, {value: text})}/>
                 </View>
+                <View style={{marginBottom: 20}}>
+                    <Text>Current App Time:</Text>
+                    <Text>{moment().format("DD MMM YYYY hh:mm a")}</Text>
+                </View>
+
+                <TouchableNativeFeedback onPress={() => this.clearDashboardCache()}>
+                    <View style={Styles.basicPrimaryButtonView}>
+                        <Text style={{
+                            fontSize: Fonts.Medium,
+                            color: Colors.TextOnPrimaryColor
+                        }}>Clear Dashboard Cache (make restart-app after)</Text>
+                    </View>
+                </TouchableNativeFeedback>
             </View>);
         }
     }

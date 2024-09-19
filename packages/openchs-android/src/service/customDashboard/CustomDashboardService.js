@@ -1,13 +1,43 @@
 import BaseService from "../BaseService";
 import Service from "../../framework/bean/Service";
-import {Dashboard, GroupDashboard} from "avni-models";
+import {Dashboard, DashboardFilterConfig, GroupDashboard, Range} from "openchs-models";
 import PrivilegeService from "../PrivilegeService";
 import EntityService from "../EntityService";
 import _ from 'lodash';
+import CustomDashboardCacheService from "../CustomDashboardCacheService";
+import DashboardFilterService from "../reports/DashboardFilterService";
+import FormMetaDataSelection from "../../model/FormMetaDataSelection";
+import General from "../../utility/General";
+
+export const CustomDashboardType = {
+    Primary: "Primary",
+    Secondary: "Secondary",
+    None: "None"
+}
+
+function getOneDashboard(dashboards) {
+    return _.head(_.map(dashboards, ({dashboard}) => dashboard));
+}
+
+function getOnePrimaryDashboard(privilegeService, entityService) {
+    const groupDashboards = getGroupDashboards(privilegeService, entityService).filtered('primaryDashboard = true');
+    return getOneDashboard(groupDashboards);
+}
+
+function getGroupDashboards(privilegeService, entityService) {
+    const ownedGroupsQuery = _.map(privilegeService.ownedGroups(), ({groupUuid}) => `group.uuid = '${groupUuid}'`).join(' OR ');
+    return entityService.getAllNonVoided(GroupDashboard.schema.name)
+        .filtered(_.isEmpty(ownedGroupsQuery) ? 'uuid = null' : ownedGroupsQuery)
+        .filtered('TRUEPREDICATE DISTINCT(dashboard.uuid)');
+}
+
+function getDashboardsBasedOnPrivilege(privilegeService, entityService, customDashboardService) {
+    return privilegeService.hasAllPrivileges() ?
+        customDashboardService.getAllDashboards() : _.map(getGroupDashboards(privilegeService, entityService), ({dashboard}) => dashboard);
+}
 
 @Service("customDashboardService")
 class CustomDashboardService extends BaseService {
-
     constructor(db, context) {
         super(db, context);
     }
@@ -20,31 +50,57 @@ class CustomDashboardService extends BaseService {
         return [...this.getAll().filtered('voided = false')];
     }
 
-    getDashboards(onlyPrimary) {
-        return onlyPrimary ? [this.getOnePrimaryDashboard()] : this.getDashboardsBasedOnPrivilege();
-    }
-
-    getOnePrimaryDashboard() {
-        const groupDashboards = this.getGroupDashboard().filtered('primaryDashboard = true');
-        return _.head(_.map(groupDashboards, ({dashboard}) => dashboard));
+    getDashboards(customDashboardType) {
+        const privilegeService = this.getService(PrivilegeService);
+        const entityService = this.getService(EntityService);
+        switch (customDashboardType) {
+            case CustomDashboardType.Primary:
+                return [getOnePrimaryDashboard(privilegeService, entityService)];
+            case CustomDashboardType.Secondary:
+                return [this.getOneSecondaryDashboard(privilegeService, entityService)];
+            case CustomDashboardType.None:
+            default:
+                return getDashboardsBasedOnPrivilege(privilegeService, entityService, this);
+        }
     }
 
     isCustomDashboardMarkedPrimary() {
-        return this.getGroupDashboard().filtered('primaryDashboard = true').length > 0;
+        return getGroupDashboards(this.getService(PrivilegeService), this.getService(EntityService)).filtered('primaryDashboard = true').length > 0;
     }
 
-    getDashboardsBasedOnPrivilege() {
-        return this.getService(PrivilegeService).hasAllPrivileges() ?
-            this.getAllDashboards() : _.map(this.getGroupDashboard(), ({dashboard}) => dashboard);
+    getDashboardData(dashboardUUID) {
+        const {selectedFilterValues, dashboardCache} = this.getService(CustomDashboardCacheService).getDashboardCache(dashboardUUID);
+        const dashboardFilterService = this.getService(DashboardFilterService);
+        dashboardCache.dashboard.filters.filter(filter => !filter.voided && _.isNil(selectedFilterValues[filter.uuid])).forEach(filter => {
+            const dashboardFilterConfig = dashboardFilterService.getDashboardFilterConfig(filter);
+            const inputDataType = dashboardFilterConfig.getInputDataType();
+
+            General.logDebug("CustomDashboardCacheService", "Init empty values for", dashboardFilterConfig.toDisplayText());
+
+            if (dashboardFilterConfig.isMultiEntityType()) {
+                selectedFilterValues[filter.uuid] = [];
+            } else if (dashboardFilterConfig.isDateLikeRangeFilterType() || dashboardFilterConfig.isNumericRangeFilterType()) {
+                //value should not be an array but CustomFilterService and MyDashboard has been built on that assumption
+                selectedFilterValues[filter.uuid] = Range.empty();
+            } else if (inputDataType === DashboardFilterConfig.dataTypes.formMetaData) {
+                selectedFilterValues[filter.uuid] = FormMetaDataSelection.createNew();
+            } else {
+                selectedFilterValues[filter.uuid] = null;
+            }
+        });
+        return {selectedFilterValues, dashboardCache};
     }
 
-    getGroupDashboard() {
-        const ownedGroupsQuery = _.map(this.getService(PrivilegeService).ownedGroups(), ({groupUuid}) => `group.uuid = '${groupUuid}'`).join(' OR ');
-        return this.getService(EntityService).getAllNonVoided(GroupDashboard.schema.name)
-            .filtered(_.isEmpty(ownedGroupsQuery) ? 'uuid = null' : ownedGroupsQuery)
-            .filtered('TRUEPREDICATE DISTINCT(dashboard.uuid)');
+    getOneSecondaryDashboard() {
+        const groupDashboards = getGroupDashboards(this.getService(PrivilegeService), this.getService(EntityService)).filtered('secondaryDashboard = true');
+        return getOneDashboard(groupDashboards);
     }
 
+    setSelectedFilterValues(dashboardUUID, selectedFilterValues, filterApplied) {
+        const customDashboardCacheService = this.getService(CustomDashboardCacheService);
+        customDashboardCacheService.setSelectedFilterValues(dashboardUUID, selectedFilterValues, filterApplied);
+        return this.getDashboardData(dashboardUUID);
+    }
 }
 
 export default CustomDashboardService

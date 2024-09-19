@@ -57,12 +57,16 @@ class ProgramEncounterCancelState extends AbstractDataEntryState {
         return validationResults;
     }
 
+    validateEntityAgainstRule(ruleService) {
+        return ruleService.validateAgainstRule(this.programEncounter, this.formElementGroup.form, 'EncounterCancellation');
+    }
+
     getEffectiveDataEntryDate() {
         return this.programEncounter.cancelDateTime;
     }
 
     getNextScheduledVisits(ruleService, context) {
-        const nextScheduledVisits =  ruleService.getNextScheduledVisits(this.getEntity(), this.getEntityType());
+        const nextScheduledVisits =  ruleService.getNextScheduledVisits(this.getEntity(), this.getEntityType()).filter((x) => !this.isAlreadyScheduled(this.programEncounter.programEnrolment, x));
         return context.get(IndividualService).validateAndInjectOtherSubjectForScheduledVisit(this.getEntity().individual, nextScheduledVisits);
     }
 

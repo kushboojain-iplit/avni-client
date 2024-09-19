@@ -20,11 +20,10 @@ import IndividualService from "../../service/IndividualService";
 
 export class ProgramEnrolmentActions {
     static getInitialState(context) {
-        return {};
+        return new ProgramEnrolmentState();
     }
 
     static onLoad(state: ProgramEnrolmentState, action, context) {
-        if (ProgramEnrolmentState.hasEnrolmentOrItsUsageChanged(state, action) || action.forceLoad) {
             const enrolment = action.enrolment.cloneForEdit();
             const formMappingService = context.get(FormMappingService);
             const isProgramEnrolment = action.usage === ProgramEnrolmentState.UsageKeys.Enrol;
@@ -68,9 +67,6 @@ export class ProgramEnrolmentActions {
                 programEnrolmentState.groupAffiliation.removeMemberFromGroup();
             }
             return QuickFormEditingActions.moveToPage(programEnrolmentState, action, context, ProgramEnrolmentActions);
-        } else {
-            return state.clone();
-        }
     }
 
     static enrolmentDateTimeChanged(state, action, context) {

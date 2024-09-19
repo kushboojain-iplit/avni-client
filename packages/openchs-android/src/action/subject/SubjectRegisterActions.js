@@ -18,10 +18,11 @@ import QuickFormEditingActions from "../common/QuickFormEditingActions";
 import TimerActions from "../common/TimerActions";
 import TaskService from "../../service/task/TaskService";
 import General from '../../utility/General';
+import AddressLevelService from '../../service/AddressLevelService';
 
 export class SubjectRegisterActions {
     static getInitialState(context) {
-        return {};
+        return new SubjectRegistrationState();
     }
 
     static filterFormElements(formElementGroup, context, subject) {
@@ -87,9 +88,9 @@ export class SubjectRegisterActions {
         return newState;
     }
 
-    static enterSubjectAddressLevel(state, action) {
+    static enterSubjectAddressLevel(state, action, context) {
         const newState = state.clone();
-        newState.subject.lowestAddressLevel = action.value;
+        newState.subject.lowestAddressLevel = action.value && context.get(AddressLevelService).findByUUID(action.value.uuid);
         newState.handleValidationResult(newState.subject.validateAddress());
         return newState;
     }

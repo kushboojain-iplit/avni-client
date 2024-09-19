@@ -2,6 +2,7 @@ import BaseService from "./BaseService";
 import Service from "../framework/bean/Service";
 import {UserInfo} from 'avni-models';
 import UserSettings from "../model/UserSettings";
+import _ from "lodash";
 
 @Service("userInfoService")
 class UserInfoService extends BaseService {
@@ -19,7 +20,7 @@ class UserInfoService extends BaseService {
     }
 
     /*
-    Deprecated. Use getUserSettingsObject.
+    @Deprecated. Use getUserSettingsObject.
      */
     getUserSettings() {
         return this.getUserInfo().getSettings();
@@ -50,6 +51,16 @@ class UserInfoService extends BaseService {
 
     saveOrUpdate(entity) {
         return super.saveOrUpdate(entity, UserInfo.schema.name);
+    }
+
+    getCreatedBy(entity, I18n) {
+        return this.getUserName(entity.createdByUUID, entity.createdBy, I18n);
+    }
+
+    getUserName(userUUID, userName, I18n) {
+        const userInfo = this.getUserInfo();
+        if ((userUUID === userInfo.userUUID) && !_.isNil(userUUID)) return I18n.t("you");
+        return userName;
     }
 }
 

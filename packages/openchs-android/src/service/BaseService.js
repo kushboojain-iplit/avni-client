@@ -1,6 +1,7 @@
 // @flow
 import _ from "lodash";
 import General from "../utility/General";
+import RealmQueryService from "./query/RealmQueryService";
 
 /*
 All methods with entity/entities in their name are to be used for disconnected objects. The ones without these terms are for connected objects.
@@ -42,6 +43,11 @@ class BaseService {
         return settingsService.getSettings().serverURL;
     }
 
+    findAllByUUID(uuids, schema) {
+        if (uuids.length === 0) return [];
+        return this.findAllByCriteria(RealmQueryService.orKeyValueQuery("uuid", uuids), schema).map(_.identity);
+    }
+
     findAllByKey(keyName, value, schemaName) {
         return this.findAllByCriteria(`${keyName}="${value}"`, schemaName);
     }
@@ -54,8 +60,8 @@ class BaseService {
         return this.db.objects(schema);
     }
 
-    findOnly(schema) {
-        const all = this.findAll(schema);
+    findOnly(schema = this.getSchema()) {
+        const all = this.loadAll(schema);
         return all.length === 0 ? null : all[0];
     }
 
@@ -74,6 +80,10 @@ class BaseService {
     findByKey(keyName, value, schemaName = this.getSchema()) {
         const entities = this.findAllByKey(keyName, value, schemaName);
         return this.getReturnValue(entities);
+    }
+
+    findByFiltered(filter, value, schema = this.getSchema()) {
+        return this.getReturnValue(this.findAll(schema).filtered(`${filter} = '${value}'`));
     }
 
     getReturnValue(entities) {
@@ -119,19 +129,23 @@ class BaseService {
         return this.db.objects(schema);
     }
 
+    loadAll(schema = this.getSchema()) {
+        return this.getAll(schema).map(_.identity);
+    }
+
     getCount(schema) {
         return this.getAll(schema).length;
     }
 
     /**
-    Loads all objects without materialising them into model. Ideal for displaying large list or for further filtering
+     Loads all objects without materialising them into model. Ideal for displaying large list or for further filtering
      **/
     getAllNonVoided(schema = this.getSchema()) {
         return this.db.objects(schema).filtered("voided = false");
     }
 
     /**
-    Loads all objects and also materialises them into model.
+     Loads all objects and also materialises them into model.
      **/
     loadAllNonVoided(schema = this.getSchema()) {
         return this.getAllNonVoided(schema).map(_.identity);
@@ -167,6 +181,10 @@ class BaseService {
         return _.isEmpty(uuid) ? false : this.db.objects(schema).filtered('uuid = $0', uuid).length > 0;
     }
 
+    isNew(entity) {
+        return _.isEmpty(entity.uuid) || !this.existsByUuid(entity.uuid);
+    }
+
     filtered(...args) {
         return this.db.objects(this.getSchema()).filtered(...args);
     }
@@ -188,6 +206,25 @@ class BaseService {
 
     getActualSchemaVersion() {
         return this.db.schemaVersion;
+    }
+
+    getUserInfo() {
+        return this.getService("userInfoService").getUserInfo();
+    }
+
+    delete(objectOrObjects) {
+        const db = this.db;
+        this.db.write(() => {
+            db.delete(objectOrObjects);
+        });
+    }
+
+    deleteAll() {
+        const db = this.db;
+        const all = this.findAll(this.getSchema());
+        this.db.write(() => {
+            db.delete(all);
+        });
     }
 }
 

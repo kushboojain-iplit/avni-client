@@ -8,6 +8,7 @@ import MediaQueueService from "./MediaQueueService";
 import IndividualService from "./IndividualService";
 import ProgramEncounterService from "./program/ProgramEncounterService";
 import EntityApprovalStatusService from "./EntityApprovalStatusService";
+import EncounterServiceUtil from "./EncounterServiceUtil";
 
 @Service("EncounterService")
 class EncounterService extends BaseService {
@@ -49,6 +50,9 @@ class EncounterService extends BaseService {
     }
 
     _saveEncounter(encounter, db) {
+        // Checks whether unsaved encounter is filled but saved encounter is not filled
+        const isGettingFilled = encounter.isFilled() && EncounterServiceUtil.isNotFilled(db, this.getSchema(), encounter)
+        encounter.updateAudit(this.getUserInfo(), this.isNew(encounter), isGettingFilled);
         encounter = db.create(Encounter.schema.name, encounter, true);
         const individual = this.findByUUID(encounter.individual.uuid, Individual.schema.name);
         individual.addEncounter(encounter);
@@ -96,6 +100,17 @@ class EncounterService extends BaseService {
             this.saveScheduledVisits(encounter.individual, nextScheduledVisits, db, encounter.encounterDateTime);
         });
         return encounter;
+    }
+
+    // This is used by media service hence last modified audit fields are not updated here
+    updateObservations(encounter) {
+        ObservationsHolder.convertObsForSave(encounter.observations);
+        ObservationsHolder.convertObsForSave(encounter.cancelObservations);
+        const db = this.db;
+        this.db.write(() => {
+            db.create(Encounter.schema.name, {uuid: encounter.uuid, observations: encounter.observations, cancelObservations: encounter.cancelObservations}, Realm.UpdateMode.Modified);
+            db.create(EntityQueue.schema.name, EntityQueue.create(encounter, Encounter.schema.name));
+        });
     }
 
     findDueEncounter({encounterTypeUUID, individualUUID, encounterTypeName}) {

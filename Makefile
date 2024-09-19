@@ -50,10 +50,14 @@ ignore_deps_changes:
 
 #for emulators using virtualbox
 ip:=$(shell ifconfig | grep -A 2 'vboxnet' | grep 'inet ' | tail -1 | xargs | cut -d ' ' -f 2 | cut -d ':' -f 2)
-#for default Andoird Emulator
+
+# for default Android Emulator
 ip:=$(if $(ip),$(ip),$(shell ifconfig | grep -A 2 'wlp' | grep 'inet ' | tail -1 | xargs | cut -d ' ' -f 2 | cut -d ':' -f 2))
 ip:=$(if $(ip),$(ip),$(shell ifconfig | grep -A 2 'en0' | grep 'inet ' | tail -1 | xargs | cut -d ' ' -f 2 | cut -d ':' -f 2))
 ip:=$(if $(ip),$(ip),$(shell ifconfig | grep -A 4 'en0' | grep 'inet ' | tail -1 | xargs | cut -d ' ' -f 2 | cut -d ':' -f 2))
+#Fallback for host loopback interface. 10.0.3.2 is for genymotion using virtualbox. try 10.0.2.2 if not using genymotion. https://developer.android.com/studio/run/emulator-networking
+ip:=$(if $(ip),$(ip),10.0.3.2)
+
 AVNI_HOST?=$(ip)
 sha:=$(shell git rev-parse --short=4 HEAD)
 
@@ -74,6 +78,7 @@ $(shell node -p "require('./packages/openchs-android/config/flavor_config.json')
 endef
 
 flavor_server_url:=$(call _get_from_config,$(flavor).server_url)
+flavor_disable_app_run_on_rooted_devices:=$(call _get_from_config,$(flavor).disable_app_run_on_rooted_devices)
 bugsnag_env_var_name:=$(call _get_from_config,$(flavor).bugsnag.env_var_name)
 bugsnag_project_name:=$(call _get_from_config,$(flavor).bugsnag.project_name)
 app_android_package_name:=$(call _get_from_config,$(flavor).package_name)
@@ -117,7 +122,7 @@ endif
 define _create_config
 	@echo "Creating config for $1"
 	@if [ $(1) = "prod" ]; then \
-		echo "module.exports = Object.assign(require('../../config/env/$(1).json'), {COMMIT_ID: '$(sha)', SERVER_URL: '$(flavor_server_url)'});" > packages/openchs-android/src/framework/Config.js; \
+		echo "module.exports = Object.assign(require('../../config/env/$(1).json'), {COMMIT_ID: '$(sha)', SERVER_URL: '$(flavor_server_url)', DISABLE_APP_RUN_ON_ROOTED_DEVICES: $(flavor_disable_app_run_on_rooted_devices)});" > packages/openchs-android/src/framework/Config.js; \
 	else \
 	 	echo "module.exports = Object.assign(require('../../config/env/$(1).json'), {COMMIT_ID: '$(sha)'});" > packages/openchs-android/src/framework/Config.js; \
 	fi
@@ -133,7 +138,12 @@ as_perf: ; $(call _create_config,perf)
 as_prod: ; $(call _create_config,prod)
 as_prod_dev: ; $(call _create_config,prod_dev)
 as_no_env: ; $(call _create_config,no_env)
+as_prod_lfe_dev: ; $(call _create_config,prod_lfe_dev)
+as_prod_gramin_dev: ; $(call _create_config,prod_gramin_dev)
+as_staging_gramin_dev: ; $(call _create_config,staging_gramin_dev)
 
+as_gramin_staging: ; $(call _create_config,gramin_staging)
+as_gramin_staging_dev: ; $(call _create_config,gramin_staging_dev)
 release_clean: ## If you get dex errors
 	rm -rf packages/openchs-android/android/app/build
 	mkdir -p packages/openchs-android/android/app/build/generated
@@ -160,7 +170,10 @@ release_prod_without_clean: as_prod release upload-release-sourcemap
 release_prod_dev_without_clean: as_prod_dev release
 release_prod: renew_env release_prod_without_clean
 
-release_prod_dev_without_clean: as_prod_dev release upload-release-sourcemap
+release_prod_generic_dev_without_clean: release_prod_dev_without_clean
+release_prod_lfe_dev_without_clean: as_prod_lfe_dev release
+release_prod_lfeTeachNagaland_dev_without_clean: as_prod_lfe_dev release
+release_prod_gramin_dev_without_clean: as_prod_gramin_dev release
 
 bundle_release_prod_without_clean: as_prod bundle_release upload-release-sourcemap
 bundle_release_prod: renew_env bundle_release_prod_without_clean
@@ -190,7 +203,7 @@ release_staging_playstore_without_clean: as_staging release
 release_staging_playstore: renew_env release_staging_playstore_without_clean
 
 release_prod_dev_universal_without_clean:
-	enableSeparateBuildPerCPUArchitecture=false make release_prod_dev_without_clean
+	enableSeparateBuildPerCPUArchitecture=false make release_prod_$(flavor)_dev_without_clean
 
 release_prod_universal_without_clean:
 	enableSeparateBuildPerCPUArchitecture=false make release_prod_without_clean
@@ -212,6 +225,14 @@ release_staging_dev_without_clean: as_staging_dev
 	enableSeparateBuildPerCPUArchitecture=false make release
 
 release_staging: renew_env release_staging_without_clean
+
+release_gramin_staging_without_clean: as_gramin_staging
+	enableSeparateBuildPerCPUArchitecture=false flavor=gramin make release
+
+release_gramin_staging_dev_without_clean: as_gramin_staging_dev
+	enableSeparateBuildPerCPUArchitecture=false flavor=gramin make release
+
+release_gramin_staging: renew_env release_gramin_staging_without_clean
 
 release_uat_without_clean: as_uat
 	$(call _create_config,uat)
@@ -293,8 +314,10 @@ kill_realm_browser:
 	pkill "Realm Browser" || true
 
 open_db: rm_db get_db open_db_only
+open-db: open_db
 open_db_only:
 	$(call _open_resource,../db/default.realm)
+open-db-only: open_db_only
 # </db>
 
 local_deploy_apk:
@@ -345,6 +368,8 @@ build: build_env build_app
 build_env_ci:
 	export NODE_OPTIONS=--max_old_space_size=2048
 	cd packages/openchs-android && npm install --legacy-peer-deps
+# 	export GRADLE_OPTS="-Dorg.gradle.daemon=false -Dorg.gradle.workers.max=4 -Xms1024m -Xmx4096M -XX:MaxMetaspaceSize=2g"
+#   GRADLE_OPTS set via circleci env vars ui
 
 # <packager>
 run_packager:
@@ -417,7 +442,7 @@ ifndef password
 	@echo "Provde the variable password"
 	exit 1
 endif
-	$(if $(password),$(eval token:=$(shell node packages/openchs-android/scripts/token.js '$(server):$(port)' $(username) $(password))))
+	$(if $(password),$(eval token:=$(shell node packages/openchs-android/scripts/token.js '$(server):$(port)' $(username) '$(password)')))
 
 get-token: auth
 	@echo
@@ -428,7 +453,7 @@ auth_live:
 	make get-token server=$(flavor_server_url) port=443 username=admin password=$$$(prod_admin_password_env_var_name)
 
 upload = \
-	curl -X POST $(server):$(port)/$(1) -d $(2)  \
+	curl -f -X POST $(server):$(port)/$(1) -d $(2)  \
 		-H "Content-Type: application/json"  \
 		-H "USER-NAME: admin"  \
 		-H "AUTH-TOKEN: $(token)"
@@ -456,9 +481,11 @@ else
 	$(call upload,platformTranslation,@packages/openchs-android/translations/ka_IN.json)
 endif
 
-
 deploy_platform_translations_staging:
 	make deploy_translations server=https://staging.avniproject.org port=443 username=admin password=$(OPENCHS_STAGING_ADMIN_PASSWORD)
+
+deploy_platform_translations_gramin_staging:
+	make deploy_translations server=https://staging.rwb.avniproject.org port=443 username=admin password=$(RWB_STAGING_ADMIN_PASSWORD)
 
 deploy_platform_translations_uat:
 	make deploy_translations server=https://uat.avniproject.org port=443 username=admin password=$(password)
@@ -472,3 +499,6 @@ deploy_platform_translations_for_flavor_live:
 deploy_platform_translations_live_for_all_flavors:
 	make deploy_platform_translations_for_flavor_live flavor='lfe'
 	make deploy_platform_translations_for_flavor_live flavor='generic'
+
+deploy_platform_translations_local_live:
+	make deploy_translations server=http://localhost port=8021 username=$(username) password=$(password)

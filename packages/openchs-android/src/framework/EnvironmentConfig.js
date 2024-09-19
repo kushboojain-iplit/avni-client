@@ -30,6 +30,19 @@ class EnvironmentConfig {
     static logAnalytics() {
         return EnvironmentConfig.isProd() || Config.debugFirebaseAnalyticsEvents === true
     }
+
+    static disallowedAppRunOnRootDevices() {
+        const isAppRunDisallowedOnRootDevices = Config.DISABLE_APP_RUN_ON_ROOTED_DEVICES;
+        return !_.isNil(isAppRunDisallowedOnRootDevices) && isAppRunDisallowedOnRootDevices;
+    }
+
+    static isProdAndDisallowedOnRootDevices() {
+        return EnvironmentConfig.isProd() && EnvironmentConfig.disallowedAppRunOnRootDevices();
+    }
+
+    static isHighSecurity() {
+        return Config.HIGH_SECURITY === 'true';
+    }
 }
 
 export default EnvironmentConfig;

@@ -15,6 +15,7 @@ import ValidationErrorMessage from "../form/ValidationErrorMessage";
 import LocationHierarchyService from "../../service/LocationHierarchyService";
 import AutocompleteSearchWithLabel from "../AutoCompleteSearch/AutocompleteSearchWithLabel";
 import OrganisationConfigService from "../../service/OrganisationConfigService";
+import {Individual} from 'openchs-models';
 
 class AddressLevels extends AbstractComponent {
     static propTypes = {
@@ -28,8 +29,13 @@ class AddressLevels extends AbstractComponent {
         minLevelTypeUUIDs: PropTypes.array,
         maxLevelTypeUUID: PropTypes.string,
         isOutsideCatchment: PropTypes.bool,
-        fieldLabel: PropTypes.string
+        fieldLabel: PropTypes.string,
+        userHintText: PropTypes.string
     };
+
+    static defaultProps = {
+        userHintText: ""
+    }
 
     viewName() {
         return 'AddressLevels';
@@ -52,7 +58,7 @@ class AddressLevels extends AbstractComponent {
     selectAddressLevel(state, levelType, selectedLevelUUID, exclusive = false) {
         const selectedLevel = this.addressLevelService.findByUUID(selectedLevelUUID, this.addressLevelService.getSchema());
         const newLevels = this.addressLevelService.getDescendantsOfParent(selectedLevelUUID, this.props.minLevelTypeUUIDs);
-        const data = exclusive ? state.data.selectLevel(levelType, selectedLevel, newLevels) :
+        const data = exclusive ? state.data.selectLevel(selectedLevel, newLevels) :
             state.data.addLevel(levelType, selectedLevel, newLevels);
         const onLowest = !_.isEmpty(data.lowestSelectedAddresses)
             && this.addressLevelService.isOnLowestLevel(data.lowestSelectedAddresses, this.props.minLevelTypeUUIDs);
@@ -94,7 +100,7 @@ class AddressLevels extends AbstractComponent {
         } else {
             this.setState({data: new AddressLevelsState()}, () => {
                 const selectedLowestLevel = this.props.selectedLowestLevel;
-                const exists = !_.isEmpty(selectedLowestLevel) && !_.isEmpty(selectedLowestLevel.uuid);
+                const exists = this.doesLowestSelectedLevelExist(selectedLowestLevel);
                 const newState = this.onLoad(exists ? selectedLowestLevel : undefined);
                 this.setState(newState);
             });
@@ -123,6 +129,10 @@ class AddressLevels extends AbstractComponent {
         }
     }
 
+    doesLowestSelectedLevelExist(selectedLowestLevel) {
+        return !_.isEmpty(selectedLowestLevel) && !_.isEmpty(selectedLowestLevel.uuid) && !_.isEqual(selectedLowestLevel.uuid, Individual.getAddressLevelDummyUUID());
+    }
+
     _invokeCallbacks(oldState, newState) {
         if (_.isFunction(this.props.onSelect)) {
             this.props.onSelect(newState.data);
@@ -141,6 +151,7 @@ class AddressLevels extends AbstractComponent {
 
         General.logDebug(this.viewName(), 'render');
         const mandatoryText = this.props.mandatory ? <Text style={{color: Colors.ValidationError}}> * </Text> : <Text/>;
+        const userHint = ` ${this.props.userHintText}`;
         let addressLevels = this.state.data.levels.map(([levelType, levels], idx) =>
             _.size(levels) > this.getMaxInlineDisplayCount() ?
                 <AutocompleteSearchWithLabel
@@ -164,7 +175,10 @@ class AddressLevels extends AbstractComponent {
                 marginBottom: Styles.VerticalSpacingBetweenFormElements,
             }}>
                 {this.props.skipLabel ? null :
-                    <Text style={Styles.formLabel}>{this.props.fieldLabel || this.I18n.t('Address')}{mandatoryText}</Text>}
+                    <>
+                        <Text style={Styles.formLabel}>{this.props.fieldLabel || this.I18n.t('Address')}{mandatoryText}</Text>
+                        <Text style={Styles.helpText}>{userHint}</Text>
+                    </>}
                 <View style={{
                     borderWidth: 1,
                     borderStyle: 'dashed',

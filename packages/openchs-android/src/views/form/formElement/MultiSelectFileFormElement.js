@@ -12,6 +12,7 @@ import {Button, Text} from "native-base";
 import Fonts from "../../primitives/Fonts";
 import Styles from "../../primitives/Styles";
 import FormElementLabelWithDocumentation from "../../common/FormElementLabelWithDocumentation";
+import _ from "lodash";
 
 class MultiSelectFileFormElement extends FileFormElement {
     static propTypes = {
@@ -52,6 +53,7 @@ class MultiSelectFileFormElement extends FileFormElement {
             formElement: this.props.element,
             answerUUID: fileName
         });
+        this.setState({mediaCount: _.size(this.mediaUris)});
     }
 
     renderMedia(index) {
@@ -77,7 +79,6 @@ class MultiSelectFileFormElement extends FileFormElement {
                 {_.map(_.range(0, this.state.mediaCount), index => this.renderMedia(index))}
                 <Button disabled={isDisabled}
                         style={{
-                            height: 22,
                             backgroundColor: isDisabled ? Colors.DisabledButtonColor : Colors.ActionButtonColor,
                             alignSelf: 'flex-end',
                             marginTop: 10,

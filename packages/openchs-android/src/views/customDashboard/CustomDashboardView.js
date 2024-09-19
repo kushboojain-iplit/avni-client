@@ -3,11 +3,23 @@ import CHSContainer from "../common/CHSContainer";
 import AppHeader from "../common/AppHeader";
 import React, {Fragment} from "react";
 import Reducers from "../../reducer";
-import {CustomDashboardActionNames as Actions} from "../../action/customDashboard/CustomDashboardActions";
-import {SafeAreaView, ScrollView, StyleSheet, Text, TouchableOpacity, View} from "react-native";
+import {
+    CustomDashboardActionNames as Actions,
+    performCustomDashboardActionAndClearRefresh,
+    performCustomDashboardActionAndRefresh
+} from "../../action/customDashboard/CustomDashboardActions";
+import {
+    SafeAreaView,
+    ScrollView,
+    StyleSheet,
+    Text,
+    TouchableNativeFeedback,
+    TouchableOpacity,
+    View
+} from "react-native";
 import _ from "lodash";
 import CustomDashboardTab from "./CustomDashboardTab";
-import {DashboardSection} from 'avni-models';
+import {DashboardSection} from 'openchs-models';
 import TypedTransition from "../../framework/routing/TypedTransition";
 import CHSNavigator from "../../utility/CHSNavigator";
 import Colors from "../primitives/Colors";
@@ -18,7 +30,6 @@ import IndividualSearchResultPaginatedView from "../individual/IndividualSearchR
 import IndividualListView from "../individuallist/IndividualListView";
 import Styles from "../primitives/Styles";
 import EntityService from "../../service/EntityService";
-import CustomDashboardCard from "./CustomDashboardCard";
 import CommentListView from "../comment/CommentListView";
 import Path from "../../framework/routing/Path";
 import TaskListView from "../task/TaskListView";
@@ -27,36 +38,143 @@ import ChecklistListingView from "../checklist/ChecklistListingView";
 import {FilterActionNames} from '../../action/mydashboard/FiltersActionsV2';
 import Distances from '../primitives/Distances';
 import AppliedFiltersV2 from '../filter/AppliedFiltersV2';
+import General from "../../utility/General";
+import {CustomDashboardType} from "../../service/customDashboard/CustomDashboardService";
+import MCIIcon from "react-native-vector-icons/MaterialCommunityIcons";
+import Line from '../common/Line';
+import {CardTileView} from './CardTileView';
+import {CardListView} from './CardListView';
+import UserInfoService from "../../service/UserInfoService";
+import DashboardFilterService from '../../service/reports/DashboardFilterService';
+import DatePicker from '../primitives/DatePicker';
+import moment from 'moment';
+
+const viewNameMap = {
+    'ApprovalListingView': ApprovalListingView,
+    'IndividualSearchResultPaginatedView': IndividualSearchResultPaginatedView,
+    'IndividualListView': IndividualListView,
+    'CommentListView': CommentListView,
+    'ChecklistListingView': ChecklistListingView
+};
+
+function RefreshSection({I18n, onRefreshPressed, lastUpdatedOn}) {
+    const refreshSectionStyle = {
+        paddingLeft: 15,
+        color: Styles.grey,
+        fontSize: Styles.smallerTextSize,
+        fontWeight: 'bold'
+    };
+    return <TouchableNativeFeedback onPress={() => onRefreshPressed()}>
+        <View style={{
+            backgroundColor: Colors.SubHeaderBackground,
+            flexDirection: 'row',
+            minHeight: 45,
+            alignItems: 'center'
+        }}>
+            <Text style={refreshSectionStyle}>{I18n.t('lastRefreshedMessage', {dateTime: General.formatDateTime(lastUpdatedOn)})}</Text>
+            <MCIIcon style={{fontSize: 30, color: Colors.DullIconColor}} name='refresh'/>
+        </View>
+    </TouchableNativeFeedback>;
+}
+
+function FilterSection({dispatcher, asOnDateValue, asOnDateFilter, I18n, onFilterPressed}) {
+
+    const onAsOnDateChange = (date) => {
+        dispatcher.dispatchAction(FilterActionNames.ON_FILTER_UPDATE, {
+            filter: asOnDateFilter, value: date
+        });
+        dispatcher.dispatchAction(FilterActionNames.BEFORE_APPLY_FILTER, {status: true});
+        dispatcher.dispatchAction(FilterActionNames.APPLIED_FILTER, {navigateToDashboardView: _.noop});
+        performCustomDashboardActionAndClearRefresh(dispatcher, Actions.FILTER_APPLIED);
+    }
+
+    const renderQuickDateOptions = (label, value, isFilled) => {
+        const backgroundColor = {backgroundColor: isFilled ? Colors.ActionButtonColor : Colors.FilterButtonColor};
+        const textColor = {color: isFilled ? Colors.TextOnPrimaryColor : Styles.accentColor};
+        return (
+            <TouchableOpacity
+                style={[CustomDashboardView.styles.filterButton, backgroundColor]}
+                onPress={() => isFilled ? _.noop() : onAsOnDateChange(value)}
+            >
+                <Text style={[CustomDashboardView.styles.buttonText, textColor]}>{I18n.t(label)}</Text>
+            </TouchableOpacity>
+        )
+    }
+
+    const isToday = moment(asOnDateValue).isSame(moment(), "day");
+    const isTomorrow = moment(asOnDateValue).isSame(moment().add(1, "day"), "day");
+
+    return (<Fragment>
+        <View>
+            <View style={CustomDashboardView.styles.itemContent}>
+                <View style={CustomDashboardView.styles.buttons}>
+                    <TouchableNativeFeedback onPress={() => onFilterPressed()}>
+                        <View style={{
+                            ...CustomDashboardView.styles.filterButton,
+                        }}>
+                            <Text style={CustomDashboardView.styles.filterText}>{I18n.t('filter')}</Text>
+                        </View>
+                    </TouchableNativeFeedback>
+                    {asOnDateFilter && <View style={{
+                        flexDirection: 'row',
+                        alignItems: 'center',
+                        justifyContent: 'flex-start',
+                        flexWrap: 'wrap',
+                        gap: 5,
+                        flex: 0.6
+                    }}>
+                        <Text style={{...CustomDashboardView.styles.labelText}}>{I18n.t('asOnDate')}: </Text>
+                        <DatePicker overridingStyle={CustomDashboardView.styles.buttonText} nonRemovable={true}
+                                    pickTime={false} dateValue={asOnDateValue}
+                                    onChange={onAsOnDateChange.bind(this)}/>
+                        {renderQuickDateOptions('Today', new Date(), isToday)}
+                        {renderQuickDateOptions('Tomorrow', moment().add(1, "day").toDate(), isTomorrow)}
+                    </View>}
+                </View>
+            </View>
+        </View>
+
+    </Fragment>);
+}
 
 @Path('/customDashboardView')
 class CustomDashboardView extends AbstractComponent {
     static styles = StyleSheet.create({
         itemContent: {
             flexDirection: 'column',
-            borderBottomWidth: 1,
-            borderColor: Colors.InputBorderNormal,
-            backgroundColor: Colors.FilterBar,
             paddingHorizontal: Distances.ScaledContentDistanceFromEdge,
             paddingBottom: Distances.ScaledVerticalSpacingBetweenOptionItems,
             elevation: 2,
-            minWidth: '95%',
-            minHeight: 60
+            marginHorizontal: 5
         },
         buttons: {
             flexDirection: "row-reverse",
             alignItems: "center",
             justifyContent: "space-between",
-            paddingTop: 8,
         },
         filterButton: {
-            paddingHorizontal: 8,
-            paddingVertical: 4,
-            backgroundColor: Colors.ActionButtonColor,
-            borderRadius: 3
+            zIndex: 1,
+            elevation: 2,
+            fontSize: 16,
+            backgroundColor: Colors.FilterButtonColor,
+            borderRadius: 3,
+            padding: 5
+        },
+        filterText: {
+            color: Styles.accentColor,
+            fontSize: Styles.smallTextSize,
+            fontWeight: 'bold',
+            textTransform: 'uppercase',
         },
         buttonText: {
-            color: Colors.TextOnPrimaryColor,
-            fontSize: Styles.normalTextSize
+            color: Styles.accentColor,
+            fontSize: Styles.smallerTextSize,
+            fontWeight: 'bold',
+        },
+        labelText: {
+            color: Styles.grey,
+            fontSize: Styles.smallerTextSize,
+            fontWeight: 'bold',
         }
     });
 
@@ -64,30 +182,27 @@ class CustomDashboardView extends AbstractComponent {
         super(props, context, Reducers.reducerKeys.customDashboard);
     }
 
+    defaultProps = {
+        showSearch: false
+    };
+
     viewName() {
         return 'CustomDashboardView';
     }
 
     UNSAFE_componentWillMount() {
-        this.dispatchAction(Actions.ON_LOAD, this.props);
-        this.refreshCounts();
+        const {customDashboardType} = this.props;
+        performCustomDashboardActionAndClearRefresh(this, Actions.ON_LOAD, {customDashboardType});
         super.UNSAFE_componentWillMount();
     }
 
     onClearFilters() {
-        this.dispatchAction(Actions.ON_DASHBOARD_CHANGE, {dashboardUUID: this.state.activeDashboardUUID});
-        this.refreshCounts();
-    }
-
-    refreshCounts() {
-        this.dispatchAction(Actions.REMOVE_OLDER_COUNTS);
-        setTimeout(() => this.dispatchAction(Actions.REFRESH_COUNT), 500);
+        performCustomDashboardActionAndClearRefresh(this, Actions.FILTER_CLEARED, {dashboardUUID: this.state.activeDashboardUUID});
     }
 
     onDashboardNamePress(uuid) {
         this.dispatchAction(FilterActionNames.ON_LOAD, {dashboardUUID: uuid});
-        this.dispatchAction(Actions.ON_DASHBOARD_CHANGE, {dashboardUUID: uuid});
-        this.refreshCounts();
+        performCustomDashboardActionAndRefresh(this, Actions.ON_DASHBOARD_CHANGE, {dashboardUUID: uuid});
     }
 
     renderDashboards() {
@@ -109,94 +224,87 @@ class CustomDashboardView extends AbstractComponent {
     }
 
     renderCards() {
+        const splitNestedCards = (cardIter) => {
+            const repeatTimes = cardIter.nested ? cardIter.countOfCards : 1;
+            return Array(repeatTimes).fill(cardIter).map((card, i) => ({...card.toJSON(), itemKey: card.getCardId(i)}));
+        }
         const activeDashboardSectionMappings = _.filter(this.state.reportCardSectionMappings, ({dashboardSection}) => this.state.activeDashboardUUID === dashboardSection.dashboard.uuid);
         const sectionWiseData = _.chain(activeDashboardSectionMappings)
             .groupBy(({dashboardSection}) => dashboardSection.uuid)
             .map((groupedData, sectionUUID) => {
                 const section = this.getService(EntityService).findByUUID(sectionUUID, DashboardSection.schema.name);
-                const cards = _.map(_.sortBy(groupedData, 'displayOrder'), ({card}) => card);
+                const cardsWithNestedContent = _.map(_.sortBy(groupedData, 'displayOrder'), ({card}) => card);
+                const cards = _.flatMap(cardsWithNestedContent, splitNestedCards);
                 return {section, cards};
             })
             .sortBy('section.displayOrder')
             .value();
+        const onCardPressOp = _.debounce(this.onCardPress.bind(this), 500);
+
+        const nonVoidedSectionWiseData = sectionWiseData.filter(item => !item.section.voided);
 
         return (
             <View style={styles.container}>
-                {_.map(sectionWiseData, ({section, cards}) => (
-                    <View key={section.uuid} style={styles.sectionContainer}>
-                        {section.viewType !== DashboardSection.viewTypeName.Default &&
-                        this.renderSectionName(section.name, section.description, section.viewType, cards)}
-                        <View style={styles.cardContainer}>
-                            {_.map(cards, (card, index) => (
-                                <CustomDashboardCard
-                                    key={card.uuid}
-                                    reportCard={card}
-                                    onCardPress={this.onCardPress.bind(this)}
-                                    index={index}
-                                    viewType={section.viewType}
-                                    countResult={this.state.cardToCountResultMap[card.uuid]}
-                                    countUpdateTime={this.state.countUpdateTime}
-                                />
-                            ))}
+                {_.map(nonVoidedSectionWiseData, ({section, cards}) => (
+                        <View key={section.uuid} style={styles.sectionContainer}>
+                            {section.viewType !== DashboardSection.viewTypeName.Default &&
+                                this.renderSectionName(section.name, section.description, section.viewType, cards)}
+                            <View style={section.viewType === 'Tile' ? styles.cardContainer : styles.listContainer}>
+                                {_.map(cards, (card, index) => {
+                                    return section.viewType === 'Tile' ?
+                                        <CardTileView key={card.itemKey} reportCard={card} I18n={this.I18n}
+                                                      onCardPress={onCardPressOp}
+                                                      index={index}
+                                                      countResult={this.state.cardToCountResultMap[card.itemKey]}/> :
+                                        <CardListView key={card.itemKey} reportCard={card} I18n={this.I18n}
+                                                      onCardPress={onCardPressOp}
+                                                      countResult={this.state.cardToCountResultMap[card.itemKey]}
+                                                      index={index} isLastCard={index === cards.length - 1}/>;
+
+                                })}
+                            </View>
                         </View>
-                    </View>
-                ))}
+                    )
+                )}
             </View>
         )
-    }
-
-    getViewByName(viewName) {
-        const viewNameMap = {
-            'ApprovalListingView': ApprovalListingView,
-            'IndividualSearchResultPaginatedView': IndividualSearchResultPaginatedView,
-            'IndividualListView': IndividualListView,
-            'CommentListView': CommentListView,
-            'ChecklistListingView': ChecklistListingView
-        };
-        return viewNameMap[viewName]
     }
 
     onBackPress() {
         this.goBack();
     }
 
-    didFocus() {
-        this.refreshCounts();
-    }
-
     onCardPress(reportCardUUID) {
         this.dispatchAction(Actions.LOAD_INDICATOR, {loading: true});
         return setTimeout(() => this.dispatchAction(Actions.ON_CARD_PRESS, {
             reportCardUUID,
-            goToTaskLists: (taskTypeType) => {
+            goToTaskLists: (taskTypeType, reportFilters) => {
                 TypedTransition.from(this).with({
                     taskTypeType: taskTypeType,
                     backFunction: this.onBackPress.bind(this),
-                    indicatorActionName: Actions.LOAD_INDICATOR
+                    indicatorActionName: Actions.LOAD_INDICATOR,
+                    reportFilters: reportFilters
                 }).to(TaskListView);
             },
-            cb: (results, count, status, viewName) => TypedTransition.from(this).with({
+            onCustomRecordCardResults: (results, status, viewName, approvalStatus_status, reportFilters, reportCard) => TypedTransition.from(this).with({
+                reportFilters: reportFilters,
+                approvalStatus_status: approvalStatus_status,
                 indicatorActionName: Actions.LOAD_INDICATOR,
-                headerTitle: status || 'subjectsList',
+                headerTitle: _.truncate(reportCard.name, {'length': 30}) || status,
                 results: results,
-                totalSearchResultsCount: count,
+                totalSearchResultsCount: results.length,
                 reportCardUUID,
-                listType: _.lowerCase(status),
+                listType: status,
                 backFunction: this.onBackPress.bind(this),
                 onIndividualSelection: (source, individual) => CHSNavigator.navigateToProgramEnrolmentDashboardView(source, individual.uuid),
-                onApprovalSelection: (source, entity, schema) => CHSNavigator.navigateToApprovalDetailsView(source, entity, schema),
-            }).to(this.getViewByName(viewName), true)
+                onApprovalSelection: (source, entity) => CHSNavigator.navigateToApprovalDetailsView(source, entity),
+            }).to(viewNameMap[viewName], true)
         }), 0);
     }
 
     renderZeroResultsMessageIfNeeded() {
         if (_.size(this.state.dashboards) === 0)
-            return (
-                <View>
-                    <Text
-                        style={GlobalStyles.emptyListPlaceholderText}>{this.I18n.t('dashboardsNotAvailable')}</Text>
-                </View>
-            );
+            return <Text style={[{marginLeft: 20}, GlobalStyles.emptyListPlaceholderText]}>{this.I18n.t('dashboardsNotAvailable')}</Text>;
         else
             return (<View/>);
     }
@@ -206,55 +314,83 @@ class CustomDashboardView extends AbstractComponent {
         TypedTransition.from(this)
             .with({
                 dashboardUUID: activeDashboardUUID,
-                onFilterChosen: (ruleInputArray) => this.dispatchAction(Actions.REFRESH_COUNT, {ruleInput: {ruleInputArray: ruleInputArray}, filterApplied: true}),
-                loadFiltersData: (filters) => this.dispatchAction(Actions.SET_DASHBOARD_FILTERS, {customDashboardFilters: filters, filterApplied: true}),
+                onFilterChosen: (ruleInputArray) => performCustomDashboardActionAndClearRefresh(this, Actions.FILTER_APPLIED, {
+                    ruleInput: {ruleInputArray: ruleInputArray},
+                    filterApplied: true
+                })
             }).to(FiltersViewV2, true);
     }
 
     render() {
+        General.logDebug("CustomDashboardView", "render");
+
+        const settings = this.getService(UserInfoService).getUserSettingsObject();
+        const {hideBackButton, startSync, renderSync, icon, customDashboardType, onSearch, showSearch} = this.props;
         const title = this.props.title || 'dashboards';
-        const {hasFilters, loading} = this.state;
+        const {hasFiltersSet, loading} = this.state;
+        const dashboardFilterService = this.getService(DashboardFilterService);
+
+        let filterConfigs, asOnDateFilterUUID, asOnDateFilter, asOnDateFilterValue, filters, dashboard;
+        const hasDashboards = this.state.dashboards.length !== 0;
+        if (hasDashboards) {
+            dashboard = this.state.dashboards.find((x) => x.uuid === this.state.activeDashboardUUID);
+            filters = dashboardFilterService.getFilters(dashboard.uuid);
+            filterConfigs = dashboardFilterService.getFilterConfigsForDashboard(dashboard.uuid);
+            asOnDateFilterUUID = _.findKey(filterConfigs, entity => entity.isAsOnDateFilter());
+            asOnDateFilter = _.find(filters, ({uuid}) => uuid === asOnDateFilterUUID);
+            asOnDateFilterValue = (asOnDateFilterUUID && this.state.customDashboardFilters[asOnDateFilterUUID])
+                ? this.state.customDashboardFilters[asOnDateFilterUUID] : new Date();
+        }
+
         return (
-            <CHSContainer style={{backgroundColor: Colors.GreyContentBackground,
-                marginBottom: Styles.ContentDistanceFromEdge}}>
+            <CHSContainer style={{
+                marginBottom: Styles.ContentDistanceFromEdge
+            }}>
                 <AppHeader title={this.I18n.t(title)}
-                           hideBackButton={this.props.hideBackButton}
-                           startSync={this.props.startSync}
-                           renderSync={this.props.renderSync}
-                           icon={this.props.icon}
-                           hideIcon={_.isNil(this.props.icon)}/>
-                {!this.props.onlyPrimary &&
-                <SafeAreaView style={{height: 50}}>
-                    <ScrollView horizontal style={{backgroundColor: Colors.cardBackgroundColor}}>
-                        {this.renderDashboards()}
-                        {this.renderZeroResultsMessageIfNeeded()}
-                    </ScrollView>
-                </SafeAreaView>}
-                <Fragment>
-                    {hasFilters && <View style={{display: "flex", padding: 10}}>
-                        <SafeAreaView style={{maxHeight: 160}}>
-                            <ScrollView style={this.state.customDashboardFilters.applied && CustomDashboardView.styles.itemContent}>
-                                <AppliedFiltersV2 dashboardUUID={this.state.activeDashboardUUID}
-                                                postClearAction={() => this.onClearFilters()}
-                                                  applied={this.state.customDashboardFilters.applied}
-                                                  selectedLocations={this.state.customDashboardFilters.selectedLocations}
-                                                selectedCustomFilters={this.state.customDashboardFilters.selectedCustomFilters}
-                                                selectedGenders={this.state.customDashboardFilters.selectedGenders}/>
+                           hideBackButton={hideBackButton}
+                           startSync={startSync}
+                           renderSync={renderSync}
+                           icon={icon}
+                           hideIcon={_.isNil(icon)}
+                           renderSearch={showSearch}
+                           onSearch={onSearch}
+                />
+                <ScrollView>
+                    <Line/>
+                    {(_.isNil(customDashboardType) || customDashboardType === CustomDashboardType.None) &&
+                        <SafeAreaView style={{height: 50}}>
+                            <ScrollView horizontal style={{backgroundColor: Colors.cardBackgroundColor}}>
+                                {this.renderDashboards()}
+                                {this.renderZeroResultsMessageIfNeeded()}
                             </ScrollView>
-                        </SafeAreaView>
-                        <View style={CustomDashboardView.styles.buttons}>
-                            <TouchableOpacity
-                              style={CustomDashboardView.styles.filterButton}
-                              onPress={() => this.onFilterPressed()}>
-                                <Text style={CustomDashboardView.styles.buttonText}>{this.I18n.t("filter")}</Text>
-                            </TouchableOpacity>
+                        </SafeAreaView>}
+                    {hasDashboards && <>
+                        <View style={{display: "flex", flexDirection: "row", flex: 1, justifyContent: "space-between"}}>
+                            <View style={{flex: 0.65}}>
+                                {settings.autoRefreshDisabled && !_.isNil(this.state.resultUpdatedAt) &&
+                                    <RefreshSection I18n={this.I18n}
+                                                    onRefreshPressed={() => performCustomDashboardActionAndClearRefresh(this, Actions.FORCE_REFRESH)}
+                                                    lastUpdatedOn={this.state.resultUpdatedAt}/>}
+                            </View>
                         </View>
-                    </View>}
-                    <CustomActivityIndicator loading={loading}/>
-                    <ScrollView>
+                        <CustomActivityIndicator loading={loading}/>
+                        <View>
+                            {this.state.filtersPresent &&
+                                <FilterSection dispatcher={this} asOnDateValue={asOnDateFilterValue}
+                                               asOnDateFilter={asOnDateFilter} I18n={this.I18n}
+                                               onFilterPressed={() => this.onFilterPressed()}/>}
+                        </View>
+                        <AppliedFiltersV2 dashboardUUID={this.state.activeDashboardUUID}
+                                          postClearAction={() => this.onClearFilters()}
+                                          dashboard={dashboard}
+                                          hasFiltersSet={hasFiltersSet}
+                                          selectedFilterValues={this.state.customDashboardFilters}
+                                          filterConfigs={filterConfigs}
+                                          filterUUIDsToIgnore={[]}
+                        />
                         {this.renderCards()}
-                    </ScrollView>
-                </Fragment>
+                    </>}
+                </ScrollView>
             </CHSContainer>
         );
     }
@@ -280,6 +416,9 @@ const styles = StyleSheet.create({
         flexDirection: 'row',
         flexWrap: 'wrap',
         justifyContent: 'flex-start',
+    },
+    listContainer: {
+        marginTop: 16
     }
 });
 

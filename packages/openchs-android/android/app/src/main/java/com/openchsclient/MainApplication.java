@@ -25,7 +25,11 @@ import com.facebook.react.defaults.DefaultReactNativeHost;
 
 import android.content.Context;
 import android.util.Log;
-
+import android.content.BroadcastReceiver;
+import android.content.Intent;
+import android.content.IntentFilter;
+import android.os.Build;
+import org.jetbrains.annotations.Nullable;
 import com.facebook.react.*;
 import com.facebook.soloader.SoLoader;
 
@@ -51,10 +55,9 @@ public class MainApplication extends Application implements ReactApplication {
                 Class<?> aClass = Class.forName("com.openchsclient.TamperCheckPackage");
                 ReactPackage tamperCheckPackage = (ReactPackage) aClass.newInstance();
                 if (tamperCheckPackage != null) packages.add(tamperCheckPackage);
-            } catch(Exception e) {
+            } catch (Exception e) {
                 Log.i("MainApplication", e.toString());
-            }
-            finally {
+            } finally {
                 return packages;
             }
         }
@@ -84,6 +87,15 @@ public class MainApplication extends Application implements ReactApplication {
     @Override
     public ReactNativeHost getReactNativeHost() {
         return mReactNativeHost;
+    }
+
+    @Override
+    public Intent registerReceiver(@Nullable BroadcastReceiver receiver, IntentFilter filter) {
+        if (Build.VERSION.SDK_INT >= 34 && getApplicationInfo().targetSdkVersion >= 34) {
+            return super.registerReceiver(receiver, filter, Context.RECEIVER_EXPORTED);
+        } else {
+            return super.registerReceiver(receiver, filter);
+        }
     }
 
 }

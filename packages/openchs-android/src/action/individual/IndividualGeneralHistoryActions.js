@@ -8,6 +8,10 @@ import {Encounter, Privilege} from "avni-models";
 import Colors from "../../views/primitives/Colors";
 import PrivilegeService from "../../service/PrivilegeService";
 import DraftEncounterService from '../../service/draft/DraftEncounterService';
+import {firebaseEvents, logEvent} from "../../utility/Analytics";
+import {Form} from "openchs-models";
+import {EditFormRuleResponse} from "rules-config";
+import OrganisationConfigService from "../../service/OrganisationConfigService";
 
 export class IndividualGeneralHistoryActions {
     static getInitialState() {
@@ -15,7 +19,8 @@ export class IndividualGeneralHistoryActions {
             encounters: [],
             encounterTypes: [],
             displayActionSelector: false,
-            draftEncounters: []
+            draftEncounters: [],
+            editFormRuleResponse: EditFormRuleResponse.createEditAllowedResponse()
         };
     }
 
@@ -45,7 +50,7 @@ export class IndividualGeneralHistoryActions {
     static getEncounterActions(newState, privilegeService, action) {
         const performEncounterCriteria = `privilege.name = '${Privilege.privilegeName.performVisit}' AND privilege.entityType = '${Privilege.privilegeEntityType.encounter}' AND programUuid = null AND subjectTypeUuid = '${newState.individual.subjectType.uuid}'`;
         const allowedEncounterTypeUuidsForPerformVisit = privilegeService.allowedEntityTypeUUIDListForCriteria(performEncounterCriteria, 'encounterTypeUuid');
-        return newState.encounterTypes.filter((encounterType) => !privilegeService.hasEverSyncedGroupPrivileges() || privilegeService.hasAllPrivileges() || _.includes(allowedEncounterTypeUuidsForPerformVisit, encounterType.uuid)).map(encounterType => {
+        return newState.encounterTypes.filter((encounterType) => privilegeService.hasAllPrivileges() || _.includes(allowedEncounterTypeUuidsForPerformVisit, encounterType.uuid)).map(encounterType => {
             const newEncounter = Encounter.create();
             newEncounter.individual = newState.individual;
             newEncounter.encounterType = encounterType;
@@ -63,6 +68,7 @@ export class IndividualGeneralHistoryActions {
             programsAvailable: state.programsAvailable,
             showCount: state.showCount,
             encounterTypes: state.encounterTypes.slice(),
+            editFormRuleResponse: state.editFormRuleResponse
         };
     }
 
@@ -94,6 +100,37 @@ export class IndividualGeneralHistoryActions {
             draftEncounters
         };
     }
+
+    static onEditEncounter(state, action, context) {
+        logEvent(firebaseEvents.EDIT_ENCOUNTER);
+        const formType = action.cancel ? Form.formTypes.IndividualEncounterCancellation : Form.formTypes.Encounter;
+        const form = context.get(FormMappingService).findFormForEncounterType(action.encounter.encounterType, formType, state.individual.subjectType);
+        const editFormRuleResponse = context.get(RuleEvaluationService).runEditFormRule(form, action.encounter, 'Encounter');
+
+        if (editFormRuleResponse.isEditAllowed()) {
+            action.onEncounterEditAllowed();
+            return state;
+        } else {
+            const newState = {...state};
+            newState.editFormRuleResponse = editFormRuleResponse;
+            return newState;
+        }
+    }
+
+    static onEditErrorShown(state) {
+        return {...state, editFormRuleResponse: EditFormRuleResponse.createEditAllowedResponse()}
+    }
+
+    static onRender(state, action, context) {
+        const organisationConfigService = context.get(OrganisationConfigService);
+        if (organisationConfigService.isSaveDraftOn() && !_.isNil(action.individualUUID)) {
+            const newState = IndividualGeneralHistoryActions.clone(state);
+            const individual = context.get(IndividualService).findByUUID(action.individualUUID);
+            newState.draftEncounters = context.get(DraftEncounterService).listUnScheduledDrafts(individual).map(draft => draft.constructEncounter());
+            return newState;
+        }
+        return state;
+    }
 }
 
 const actions = {
@@ -103,6 +140,9 @@ const actions = {
     HIDE_ENCOUNTER_SELECTOR: "IGHA.HIDE_ENCOUNTER_SELECTOR",
     LAUNCH_ENCOUNTER_SELECTOR: "IGHA.LAUNCH_ENCOUNTER_SELECTOR",
     DELETE_DRAFT: "IGHA.DELETE_DRAFT",
+    ON_EDIT_ENCOUNTER: "IGHA.ON_EDIT_ENCOUNTER",
+    ON_EDIT_ERROR_SHOWN: "IGHA.ON_EDIT_ERROR_SHOWN",
+    ON_RENDER: "IGHA.ON_RENDER"
 };
 
 export default new Map([
@@ -112,6 +152,9 @@ export default new Map([
     [actions.HIDE_ENCOUNTER_SELECTOR, IndividualGeneralHistoryActions.hideEncounterSelector],
     [actions.LAUNCH_ENCOUNTER_SELECTOR, IndividualGeneralHistoryActions.launchEncounterSelector],
     [actions.DELETE_DRAFT, IndividualGeneralHistoryActions.deleteDraft],
+    [actions.ON_EDIT_ENCOUNTER, IndividualGeneralHistoryActions.onEditEncounter],
+    [actions.ON_EDIT_ERROR_SHOWN, IndividualGeneralHistoryActions.onEditErrorShown],
+    [actions.ON_RENDER, IndividualGeneralHistoryActions.onRender],
 ]);
 
 export {actions as Actions};

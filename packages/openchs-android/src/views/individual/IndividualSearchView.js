@@ -1,4 +1,4 @@
-import {View, Text, TouchableOpacity, KeyboardAvoidingView} from "react-native";
+import {ScrollView, Text, TouchableOpacity, View} from "react-native";
 import PropTypes from 'prop-types';
 import React from "react";
 import AbstractComponent from "../../framework/view/AbstractComponent";
@@ -11,7 +11,7 @@ import {IndividualSearchActionNames as Actions} from "../../action/individual/In
 import General from "../../utility/General";
 import StaticFormElement from "../viewmodel/StaticFormElement";
 import TextFormElement from "../form/formElement/TextFormElement";
-import {PrimitiveValue, CustomFilter, Privilege} from 'avni-models';
+import {PrimitiveValue, CustomFilter, Privilege} from 'openchs-models';
 import CHSContent from "../common/CHSContent";
 import Styles from "../primitives/Styles";
 import AppHeader from "../common/AppHeader";
@@ -25,7 +25,6 @@ import GenderFilter from "../filter/GenderFilter";
 import CustomActivityIndicator from "../CustomActivityIndicator";
 import PrivilegeService from "../../service/PrivilegeService";
 import _ from "lodash";
-import {ScrollView} from "react-native";
 import SingleSelectFilterModel from "../../model/SingleSelectFilterModel";
 import {Checkbox} from "native-base";
 import UserInfoService from "../../service/UserInfoService";
@@ -52,7 +51,6 @@ class IndividualSearchView extends AbstractComponent {
         this.dispatchAction(Actions.ON_LOAD, this.props);
         super.UNSAFE_componentWillMount();
     }
-
 
     searchIndividual() {
         if (this.customFilterService.errorNotPresent(this.state.selectedCustomFilters, this.state.searchCriteria.subjectType.uuid)) {
@@ -81,8 +79,8 @@ class IndividualSearchView extends AbstractComponent {
         const viewSubjectCriteria = `privilege.name = '${Privilege.privilegeName.viewSubject}' AND privilege.entityType = '${Privilege.privilegeEntityType.subject}'`;
         const privilegeService = this.context.getService(PrivilegeService);
         const allowedSubjectTypeUuidsForView = privilegeService.allowedEntityTypeUUIDListForCriteria(viewSubjectCriteria, 'subjectTypeUuid');
-        const allowedSubjectTypes = _.sortBy(_.filter(this.state.subjectTypes, subjectType => !privilegeService.hasEverSyncedGroupPrivileges() || privilegeService.hasAllPrivileges() || _.includes(allowedSubjectTypeUuidsForView, subjectType.uuid)), ({name}) => this.I18n.t(name));
-        let subjectTypeSelectFilter = SingleSelectFilterModel.forSubjectTypes(allowedSubjectTypes, this.state.searchCriteria.subjectType);
+        const allowedSubjectTypes = _.sortBy(_.filter(this.state.subjectTypes, subjectType => privilegeService.hasAllPrivileges() || _.includes(allowedSubjectTypeUuidsForView, subjectType.uuid)), ({name}) => this.I18n.t(name));
+        let subjectTypeSelectFilter = SingleSelectFilterModel.forSubjectTypes(_.filter(allowedSubjectTypes, subjectType => !subjectType.isUser()), this.state.searchCriteria.subjectType);
         const locale = this.getService(UserInfoService).getUserSettings().locale;
         const genderFilterPresent = this.customFilterService.filterTypePresent(filterScreenName, CustomFilter.type.Gender, subjectTypeUUID);
         return (
@@ -138,7 +136,8 @@ class IndividualSearchView extends AbstractComponent {
                                 onSelect={(addressLevelState) =>
                                     this.dispatchAction(Actions.TOGGLE_INDIVIDUAL_SEARCH_ADDRESS_LEVEL, {values: addressLevelState})
                                 }
-                                multiSelect={true}/>}
+                                multiSelect={true}
+                                userHintText={this.I18n.t('addressFilterImplicitBehaviorHint')}/>}
                             <>
                                 <Text style={Styles.formLabel}>{this.I18n.t("includeVoided")}</Text>
                                 <Checkbox.Group accessibilityLabel={this.I18n.t("includeVoided")}

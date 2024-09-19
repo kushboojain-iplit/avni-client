@@ -22,9 +22,13 @@ class BaseIntegrationTest {
     }
 
     executeInWrite(codeBlock) {
-        GlobalContext.getInstance().db.write(() => {
+        this.getDb().write(() => {
             codeBlock(new TestDb(GlobalContext.getInstance().db));
         });
+    }
+
+    getDb() {
+        return GlobalContext.getInstance().db;
     }
 
     getState(reducerKey) {
@@ -42,10 +46,14 @@ class BaseIntegrationTest {
 
     setup() {
         this.log("Setup Called");
-        GlobalContext.getInstance().db.write(() => {
+        this.getDb().write(() => {
             GlobalContext.getInstance().db.realmDb.deleteAll();
         });
         return this;
+    }
+
+    logQueries() {
+        this.getDb().setLogQueries(true);
     }
 
     log(...params) {
@@ -69,6 +77,10 @@ class TestDb {
     create(clazz, entity, overwrite = true) {
         console["debug"]("Creating object of type", clazz.schema.name, " with overwrite:", overwrite);
         return this.db.create(clazz.schema.name, entity, overwrite);
+    }
+
+    objectForPrimaryKey(clazz, key) {
+        return this.db.objectForPrimaryKey(clazz.schema.name, key);
     }
 }
 

@@ -4,7 +4,13 @@ import BaseService from "./BaseService";
 import EntityService from "./EntityService";
 import EntitySyncStatusService from "./EntitySyncStatusService";
 import SettingsService from "./SettingsService";
-import {EntityMetaData, EntitySyncStatus, RuleFailureTelemetry, SyncTelemetry, Individual, UserInfo} from 'openchs-models';
+import {
+    EntityMetaData,
+    EntitySyncStatus,
+    RuleFailureTelemetry,
+    SyncTelemetry,
+    IgnorableSyncError
+} from 'openchs-models';
 import EntityQueueService from "./EntityQueueService";
 import MessageService from "./MessageService";
 import RuleEvaluationService from "./RuleEvaluationService";
@@ -28,10 +34,31 @@ import TaskUnAssignmentService from "./task/TaskUnAssignmentService";
 import UserSubjectAssignmentService from "./UserSubjectAssignmentService";
 import moment from "moment";
 import AllSyncableEntityMetaData from "../model/AllSyncableEntityMetaData";
-import ProgramConfigService from './ProgramConfigService';
 import {IndividualSearchActionNames as IndividualSearchActions} from '../action/individual/IndividualSearchActions';
 import {LandingViewActionsNames as LandingViewActions} from '../action/LandingViewActions';
 import {MyDashboardActionNames} from '../action/mydashboard/MyDashboardActions';
+import {
+    CustomDashboardActionNames,
+    performCustomDashboardActionAndClearRefresh,
+} from '../action/customDashboard/CustomDashboardActions';
+import LocalCacheService from "./LocalCacheService";
+import CustomDashboardService, {CustomDashboardType} from './customDashboard/CustomDashboardService';
+
+function transformResourceToEntity(entityMetaData, entityResources) {
+    return (acc, resource) => {
+        try {
+            return acc.concat([entityMetaData.entityClass.fromResource(resource, this.entityService, entityResources)]);
+        } catch (error) {
+            if (error instanceof IgnorableSyncError) {
+                resource.excludeFromPersist = true;
+                General.logError("SyncService", error);
+            } else {
+                throw error;
+            }
+        }
+        return acc; // since error is IgnorableSyncError, return accumulator as is
+    }
+}
 
 @Service("syncService")
 class SyncService extends BaseService {
@@ -80,9 +107,9 @@ class SyncService extends BaseService {
             .then(() => Promise.resolve(this.logSyncCompleteEvent(syncStartTime)))
             .then(() => this.clearDataIn([RuleFailureTelemetry]))
             .then(() => this.downloadNewsImages())
-          .then(() => {
-              return updatedSyncSource;
-          });
+            .then(() => {
+                return updatedSyncSource;
+            });
 
         // Even blank dataServerSync with no data in or out takes quite a while.
         // Don't do it twice if no image sync required
@@ -120,7 +147,7 @@ class SyncService extends BaseService {
 
     mediaSync(statusMessageCallBack) {
         return Promise.resolve(statusMessageCallBack("uploadMedia"))
-            .then(() => this.mediaQueueService.uploadMedia());
+            .then(() => this.mediaQueueService.uploadMedia(statusMessageCallBack));
     }
 
     telemetrySync(allEntitiesMetaData, onProgressPerEntity) {
@@ -138,8 +165,9 @@ class SyncService extends BaseService {
 
     async getSyncDetails() {
         const url = this.getService(SettingsService).getSettings().serverURL;
+        const requestParams = "includeUserSubjectType=true"
         const entitySyncStatuses = this.entitySyncStatusService.findAll().map(_.identity);
-        return post(`${url}/v2/syncDetails`, entitySyncStatuses, true)
+        return post(`${url}/v2/syncDetails?${requestParams}`, entitySyncStatuses, true)
             .then(res => res.json())
             .then(({syncDetails, nowMinus10Seconds, now}) => ({
                 syncDetails,
@@ -160,6 +188,8 @@ class SyncService extends BaseService {
             const userResponse = await userConfirmation();
             if (userResponse === 'YES')
                 return this.getService(ResetSyncService).resetSync();
+            else
+                return Promise.reject(new IgnorableSyncError("userDeclinedResetSync", "User Declined Reset Sync"));
         }
     }
 
@@ -286,8 +316,13 @@ class SyncService extends BaseService {
     persistAll(entityMetaData, entityResources) {
         if (_.isEmpty(entityResources)) return;
         entityResources = _.sortBy(entityResources, 'lastModifiedDateTime');
+        const loadedSince = _.last(entityResources).lastModifiedDateTime;
 
-        const entities = entityResources.reduce((acc, resource) => acc.concat([entityMetaData.entityClass.fromResource(resource, this.entityService, entityResources)]), []);
+        const entities = entityResources.reduce(transformResourceToEntity.call(this, entityMetaData, entityResources), []);
+        const initialLength = entityResources.length;
+        //Filtering out the entityResources which were not converted into entities due to IgnorableSyncErrors
+        entityResources = _.filter(entityResources, (resource) => !resource.excludeFromPersist);
+        General.logDebug("SyncService", `Before filter entityResources length: ${initialLength}, after filter entityResources length: ${entityResources.length}, entities length  ${entities.length}`);
         General.logDebug("SyncService", `Creating entity create functions for schema ${entityMetaData.schemaName}`);
         let entitiesToCreateFns = this.getCreateEntityFunctions(entityMetaData.schemaName, entities);
         if (entityMetaData.nameTranslated) {
@@ -323,7 +358,7 @@ class SyncService extends BaseService {
         entitySyncStatus.entityName = entityMetaData.entityName;
         entitySyncStatus.entityTypeUuid = entityMetaData.syncStatus.entityTypeUuid;
         entitySyncStatus.uuid = currentEntitySyncStatus.uuid;
-        entitySyncStatus.loadedSince = new Date(_.last(entityResources).lastModifiedDateTime);
+        entitySyncStatus.loadedSince = new Date(loadedSince);
         General.logDebug("SyncService", `Creating entity create functions for ${currentEntitySyncStatus}`);
         this.bulkSaveOrUpdate(entitiesToCreateFns.concat(this.getCreateEntityFunctions(EntitySyncStatus.schema.name, [entitySyncStatus])));
         this.dispatchAction(SyncTelemetryActions.ENTITY_PULL_COMPLETED, {
@@ -360,7 +395,7 @@ class SyncService extends BaseService {
     resetServicesAfterFullSyncCompletion(updatedSyncSource) {
         if (updatedSyncSource !== SyncService.syncSources.ONLY_UPLOAD_BACKGROUND_JOB) {
             General.logInfo("Sync", "Full Sync completed, performing reset")
-            setTimeout(() => this.reset(false), 1);
+            this.reset(false);
             this.getService(SettingsService).initLanguages();
             General.logInfo("Sync", 'Full Sync completed, reset completed');
         }
@@ -368,18 +403,22 @@ class SyncService extends BaseService {
 
     reset(syncRequired: false) {
         this.context.getService(RuleEvaluationService).init();
-        this.context.getService(ProgramConfigService).init();
         this.context.getService(MessageService).init();
         this.context.getService(RuleService).init();
         this.dispatchAction('RESET');
         this.context.getService(PrivilegeService).deleteRevokedEntities(); //Invoking this in MenuView.deleteData as well
 
-        //To load subjectType after sync
         this.dispatchAction(IndividualSearchActions.ON_LOAD);
-        this.dispatchAction(MyDashboardActionNames.ON_LOAD); //Invoking this after full sync reset as well
-
-        //To re-render LandingView after sync
-        this.dispatchAction(LandingViewActions.ON_LOAD, {syncRequired});
+        LocalCacheService.getPreviouslySelectedSubjectTypeUuid().then(cachedSubjectTypeUUID => {
+            this.dispatchAction(LandingViewActions.ON_LOAD, {syncRequired, cachedSubjectTypeUUID});
+        });
+        const customDashboardService = this.context.getService(CustomDashboardService);
+        const renderCustomDashboard = customDashboardService.isCustomDashboardMarkedPrimary();
+        if (renderCustomDashboard) {
+            performCustomDashboardActionAndClearRefresh(this, CustomDashboardActionNames.ON_LOAD, {customDashboardType: CustomDashboardType.None});
+        } else {
+            this.dispatchAction(MyDashboardActionNames.ON_LOAD);
+        }
     }
 }
 

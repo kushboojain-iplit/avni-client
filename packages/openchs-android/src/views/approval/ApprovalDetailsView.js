@@ -31,12 +31,12 @@ import _ from 'lodash';
 import Fonts from "../primitives/Fonts";
 import FormMappingService from "../../service/FormMappingService";
 import {ScrollView} from "native-base";
+import UserInfoService from "../../service/UserInfoService";
 
 @Path('/approvalDetailsView')
 class ApprovalDetailsView extends AbstractComponent {
     static propTypes = {
-        entity: PropTypes.object.isRequired,
-        schema: PropTypes.string.isRequired
+        entity: PropTypes.object.isRequired
     };
 
     constructor(props, context) {
@@ -49,7 +49,7 @@ class ApprovalDetailsView extends AbstractComponent {
     }
 
     UNSAFE_componentWillMount() {
-        this.dispatchAction(Actions.ON_LOAD,{entity: this.props.entity, schema: this.props.schema});
+        this.dispatchAction(Actions.ON_LOAD,{entity: this.props.entity, schema: this.props.entity.getSchemaName()});
         super.UNSAFE_componentWillMount();
     }
 
@@ -68,20 +68,23 @@ class ApprovalDetailsView extends AbstractComponent {
         )
     }
 
-    renderEntityDate(entity, schema, I18n) {
+    renderEntityDate(entity, I18n) {
+        const createdBy = this.getService(UserInfoService).getCreatedBy(entity, this.I18n);
+        const createdByMessage = _.isNil(createdBy) ? "" : I18n.t("by", {user: createdBy});
         const schemaToDatePropertyMap = {
-            [Individual.schema.name]: {label: I18n.t('registeredOn'), dateProperty: 'registrationDate'},
-            [ProgramEnrolment.schema.name]: {label: `${I18n.t('enrolmentDate')}: `, dateProperty: 'enrolmentDateTime'},
-            [Encounter.schema.name]: {label: `${I18n.t('encounterDate')}: `, dateProperty: 'encounterDateTime'},
-            [ProgramEncounter.schema.name]: {label: `${I18n.t('encounterDate')}: `, dateProperty: 'encounterDateTime'},
-            [ChecklistItem.schema.name]: {label: `${I18n.t('encounterDate')}: `, dateProperty: 'completionDate'}
+            [Individual.schema.name]: {messageKey: I18n.t('registeredOn'), dateProperty: 'registrationDate'},
+            [ProgramEnrolment.schema.name]: {messageKey: `${I18n.t('enrolmentDate')}: `, dateProperty: 'enrolmentDateTime'},
+            [Encounter.schema.name]: {messageKey: `${I18n.t('encounterDate')}: `, dateProperty: 'encounterDateTime'},
+            [ProgramEncounter.schema.name]: {messageKey: `${I18n.t('encounterDate')}: `, dateProperty: 'encounterDateTime'},
+            [ChecklistItem.schema.name]: {messageKey: `${I18n.t('encounterDate')}: `, dateProperty: 'completionDate'}
         };
-        const {label, dateProperty} = schemaToDatePropertyMap[schema];
+        const {messageKey, dateProperty} = schemaToDatePropertyMap[entity.getSchemaName()];
+
         return <Text
-            style={styles.entityDateStyle}>{`${I18n.t(label)}${General.toDisplayDate(entity[dateProperty])}`}</Text>
+            style={styles.entityDateStyle}>{`${I18n.t(messageKey)} ${General.toDisplayDate(entity[dateProperty])} ${createdByMessage}`}</Text>;
     }
 
-    renderEditButton(entity, schema) {
+    renderEditButton(entity) {
         const clonedEntity = entity.cloneForEdit();
         const schemaToActionMap = {
             [Individual.schema.name]: () => this.getNavigateToRegisterView(clonedEntity),
@@ -95,7 +98,7 @@ class ApprovalDetailsView extends AbstractComponent {
                 name={this.I18n.t('edit')}
                 textColor={Colors.TextOnPrimaryColor}
                 buttonColor={Colors.DarkPrimaryColor}
-                onPress={schemaToActionMap[schema]}
+                onPress={schemaToActionMap[entity.getSchemaName()]}
                 extraStyle={{paddingHorizontal: 50}}/>
         </View>
     }
@@ -146,10 +149,10 @@ class ApprovalDetailsView extends AbstractComponent {
     }
 
     // TODO: the value for conditions in this method are interchanged. As for now, it has not caused issues since we are not doing much with the form. But need to fix it to avoid confusion.
-    findForm(schema, entity) {
+    findForm(entity) {
         const service = this.getService(FormMappingService);
         const get = property => _.get(entity, property);
-        switch (schema) {
+        switch (entity.getSchemaName()) {
             case(Individual.schema.name) :
                 return service.findRegistrationForm(get('subjectType'));
             case(ProgramEnrolment.schema.name) :
@@ -179,7 +182,6 @@ class ApprovalDetailsView extends AbstractComponent {
         const approvalStatus = entity.latestEntityApprovalStatus.approvalStatus;
         const showApproveReject = approvalStatus.isPending && this.state.showApprovalButtons;
         const showEdit = approvalStatus.isRejected && this.state.showEditButton;
-        const schema = this.props.schema;
         const confirmActionName = this.state.showInputBox ? Actions.ON_REJECT : Actions.ON_APPROVE;
         const observations = _.isEmpty(entity.observations) ? this.getCancelOrExitObs(entity) : entity.observations;
         return (
@@ -191,13 +193,13 @@ class ApprovalDetailsView extends AbstractComponent {
                         <View style={styles.container}>
                             <View style={{flexDirection: 'column', marginHorizontal: Distances.ContentDistanceFromEdge}}>
                                 {this.renderDetails(entity)}
-                                {this.renderEntityDate(entity, schema, this.I18n)}
+                                {this.renderEntityDate(entity, this.I18n)}
                                 <Observations
                                     observations={_.defaultTo(observations, [])}
-                                    form={this.findForm(schema, entity)}
+                                    form={this.findForm(entity)}
                                 />
                                 {showApproveReject && this.renderApproveAndRejectButtons(entity, this.I18n)}
-                                {showEdit && this.renderEditButton(entity, schema)}
+                                {showEdit && this.renderEditButton(entity)}
                             </View>
                         </View>
                     </ScrollView>
@@ -206,7 +208,7 @@ class ApprovalDetailsView extends AbstractComponent {
                       secondaryButton={this.I18n.t('cancel')}
                       onPrimaryPress={() => this.dispatchAction(confirmActionName, {
                           entity,
-                          schema,
+                          schema: entity.getSchemaName(),
                           cb: this.goBack.bind(this)
                       })}
                       onSecondaryPress={() => this.dispatchAction(Actions.ON_DIALOG_CLOSE)}

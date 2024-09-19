@@ -1,6 +1,6 @@
 import AbstractComponent from "../../framework/view/AbstractComponent";
 import React from 'react';
-import {View, TouchableOpacity, Text, StyleSheet, ToastAndroid, ScrollView, Button} from 'react-native';
+import {View, TouchableOpacity, Text, StyleSheet, ToastAndroid, ScrollView} from 'react-native';
 import SubjectDashboardGeneralTab from "../individual/SubjectDashboardGeneralTab";
 import PropTypes from 'prop-types';
 import Colors from "../primitives/Colors";
@@ -18,6 +18,7 @@ import {Names as Actions} from "../../action/program/SubjectDashboardViewActions
 import MCIcon from "react-native-vector-icons/MaterialCommunityIcons";
 import OIcon from "react-native-vector-icons/Octicons";
 import ESanjeevaniLogin from "../individual/ESanjeevaniLogin";
+import _ from "lodash";
 
 class SubjectDashboardView extends AbstractComponent {
     static propTypes = {
@@ -90,7 +91,7 @@ class SubjectDashboardView extends AbstractComponent {
         this.displayMessage(this.props.message);
         return (
             <CHSContainer>
-                  {this.state.showESanjeevaniLogin ? ( 
+                  {this.state.showESanjeevaniLogin ? (
                     <ESanjeevaniLogin
                         isVisible={this.state.showESanjeevaniLogin}
                         onClose={(isVisible) => this.setState({ showESanjeevaniLogin: isVisible })}
@@ -107,7 +108,7 @@ class SubjectDashboardView extends AbstractComponent {
                                            hideEnrol={this.state.hideEnrol}
                         />
                     </View>
-                    <ScrollView>
+                    <ScrollView style={{backgroundColor: Colors.WhiteContentBackground}}>
                         {this.state.individualProfile && (
                             <View>
                                 <Button title="E-Sanjeevani Consultation >>" onPress={() => this.setState({ showESanjeevaniLogin: true })} style={{marginBottom: 50}} />

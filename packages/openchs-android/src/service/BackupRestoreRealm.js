@@ -1,4 +1,13 @@
-import {EntitySyncStatus, IdentifierAssignment, UserInfo, Concept, MyGroups, UserSubjectAssignment} from 'openchs-models';
+import {
+    EntitySyncStatus,
+    IdentifierAssignment,
+    UserInfo,
+    Concept,
+    MyGroups,
+    UserSubjectAssignment,
+    DraftSubject,
+    DraftEncounter
+} from 'openchs-models';
 import FileSystem from "../model/FileSystem";
 import General from "../utility/General";
 import fs from 'react-native-fs';
@@ -17,6 +26,7 @@ import IndividualService from "./IndividualService";
 import SubjectMigrationService from "./SubjectMigrationService";
 import FormMappingService from "./FormMappingService";
 import UserInfoService from './UserInfoService';
+import moment from "moment";
 
 const REALM_FILE_NAME = "default.realm";
 const REALM_FILE_FULL_PATH = `${fs.DocumentDirectoryPath}/${REALM_FILE_NAME}`;
@@ -55,7 +65,7 @@ export default class BackupRestoreRealmService extends BaseService {
                 General.logDebug("BackupRestoreRealmService", "Getting upload location");
                 cb(10, "backupUploading");
             })
-            .then(() => mediaQueueService.getDumpUploadUrl(dumpType, `adhoc-dump-as-zip-${General.randomUUID()}`))
+            .then(() => mediaQueueService.getDumpUploadUrl(dumpType, `adhoc-dump-as-zip-${_.get(this.getService(UserInfoService).getUserInfo(), 'username')}-${General.randomUUID()}`))
             .then((url) => mediaQueueService.foregroundUpload(url, destZipFile, (written, total) => {
                 General.logDebug("BackupRestoreRealmService", `Upload in progress ${written}/${total}`);
                 cb(10 + (97 - 10) * (written / total), "backupUploading");
@@ -76,8 +86,6 @@ export default class BackupRestoreRealmService extends BaseService {
                 throw error;
             });
     }
-
-
 
     restore(cb) {
         let settingsService = this.getService(SettingsService);
@@ -121,8 +129,11 @@ export default class BackupRestoreRealmService extends BaseService {
                             return fs.copyFile(fullFilePath, REALM_FILE_FULL_PATH);
                         })
                         .then(() => {
-                            General.logDebug("BackupRestoreRealmService", "Refreshing application context");
-                            cb(92, "restoringDb");
+                            cb(91, "restoringDb");
+                        })
+                        .then(() => {
+                            General.logDebug("BackupRestoreRealmService", "Migrating database");
+                            cb(92, `Upgrading database. May take upto 5 minutes on slow devices. Start Time: ${moment().format("hh:mm")}`);
                         })
                         .then(() => this.dumpFileRestoreCompleted())
                         .then(() => {
@@ -144,6 +155,10 @@ export default class BackupRestoreRealmService extends BaseService {
                         .then(() => {
                             this._deleteUserInfoAndIdAssignment();
                             General.logDebug("BackupRestoreRealmService", "Deleted user info and id assignment");
+                        })
+                        .then(() => {
+                            this._deleteDrafts();
+                            General.logDebug("BackupRestoreRealmService", "Deleted drafts");
                         })
                         .then(() => {
                             this._restoreUserInfo(prevUserInfo);
@@ -168,7 +183,7 @@ export default class BackupRestoreRealmService extends BaseService {
                         })
                         .catch((error) => {
                             General.logErrorAsInfo("BackupRestoreRealm", error);
-                            cb(100, "restoreFailed", true, error.message);
+                            cb(100, "restoreFailed", true, error);
                         });
                 } else {
                     cb(100, "restoreNoDump");
@@ -176,17 +191,18 @@ export default class BackupRestoreRealmService extends BaseService {
             })
             .catch((error) => {
                 General.logErrorAsInfo("BackupRestoreRealm", error);
-                if (error.errorText) {
-                    error.errorText.then(message => cb(100, "restoreFailed", true, message));
-                } else {
-                    cb(100, "restoreFailed", true, error.message);
-                }
+                cb(100, "restoreFailed", true, error);
             });
     }
 
     _deleteUserInfoAndIdAssignment() {
         this._deleteAndResetSync(UserInfo.schema.name);
         this._deleteAndResetSync(IdentifierAssignment.schema.name);
+    }
+
+    _deleteDrafts() {
+        this._deleteAndResetSync(DraftEncounter.schema.name);
+        this._deleteAndResetSync(DraftSubject.schema.name);
     }
 
     _deleteUserGroups() {

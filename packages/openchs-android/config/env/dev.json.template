@@ -7,5 +7,5 @@
   "HIP_BASE_URL": "http://localhost",
   "PLAYGROUND": false,
   "ESANJEEVANI_SERVICE_URL": "http://localhost/esanjeevani-bridge",
-
+  "DISABLE_APP_RUN_ON_ROOTED_DEVICES": false
 }

@@ -8,12 +8,13 @@ import Reducers from "../../reducer";
 import Colors from "../primitives/Colors";
 import CHSNavigator from "../../utility/CHSNavigator";
 import GrowthChartView from "./GrowthChartView";
-import * as _ from "lodash";
+import _ from "lodash";
 import Fonts from "../primitives/Fonts";
 import Styles from "../primitives/Styles";
 import {Privilege, EncounterType} from "avni-models";
 import PrivilegeService from "../../service/PrivilegeService";
 import {StartProgramActions as Actions} from "../../action/program/StartProgramActions";
+import Pressable from "react-native/Libraries/Components/Pressable/Pressable";
 
 @Path('/ProgramActionsView')
 class ProgramActionsView extends AbstractComponent {
@@ -31,9 +32,8 @@ class ProgramActionsView extends AbstractComponent {
 
     shouldComponentUpdate(nextProps, state) {
         const enrolment = this.state.enrolment;
-        return !_.isNil(enrolment) && (
-            _.get(nextProps, 'enrolment.uuid') !== enrolment.uuid
-            || !_.isEqual(nextProps.programDashboardButtons,  this.props.programDashboardButtons));
+        return (!_.isNil(enrolment) && _.get(nextProps, 'enrolment.uuid') !== enrolment.uuid)
+            || !_.isEqual(nextProps.programDashboardButtons,  this.props.programDashboardButtons);
     }
 
     componentDidUpdate() {
@@ -106,7 +106,7 @@ class ProgramActionsView extends AbstractComponent {
             <View
                 style={{flex: 1, flexDirection: 'column', marginTop: 8}}>
                 {this.props.enrolment.isActive && (_.size(this.state.allAllowed) > 0) ? this.renderOption() : <View/>}
-                {this.props.enrolment.hasChecklist && (!this.privilegeService.hasEverSyncedGroupPrivileges() || this.privilegeService.hasAllPrivileges() || !_.isEmpty(allowedChecklistTypeUuids)) ?
+                {this.props.enrolment.hasChecklist && (this.privilegeService.hasAllPrivileges() || !_.isEmpty(allowedChecklistTypeUuids)) ?
                     this.renderButton(() => this.openChecklist(), Styles.basicPrimaryButtonView,
                         this.I18n.t('vaccinations'), Colors.TextOnPrimaryColor)
                     :

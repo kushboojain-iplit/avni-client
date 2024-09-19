@@ -3,6 +3,8 @@ import IndividualSearchCriteria from "../../service/query/IndividualSearchCriter
 import _ from "lodash";
 import FormMappingService from "../../service/FormMappingService";
 import {ArrayUtil} from "openchs-models";
+import AddressLevelState from '../common/AddressLevelsState';
+import General from "../../utility/General";
 
 class FiltersActions {
 
@@ -33,6 +35,7 @@ class FiltersActions {
             filters: FiltersActions.cloneFilters(action.filters),
             locationSearchCriteria: action.locationSearchCriteria,
             addressLevelState: action.addressLevelState,
+            selectedCustomFilters: action.selectedCustomFilters,
             filterDate: {value: action.filterDate.value},
             programs: action.programs,
             selectedPrograms: action.selectedPrograms,
@@ -62,10 +65,8 @@ class FiltersActions {
             addressLevelState: action.addressLevelState
         };
         const addressLevelService = beans.get(AddressLevelService);
-        const lowestSelectedAddressLevels = action.addressLevelState.lowestSelectedAddresses;
-        const lowestAddressLevels = lowestSelectedAddressLevels
-            .reduce((acc, parent) => acc.concat(addressLevelService.getChildrenOfNode(parent, false)), []);
-        newState.locationSearchCriteria.toggleLowestAddresses(lowestAddressLevels);
+        const toMatchAddresses = [...action.addressLevelState.selectedAddresses].concat(addressLevelService.getAllDescendants(action.addressLevelState.selectedAddresses));
+        newState.locationSearchCriteria.toggleLowestAddresses(toMatchAddresses);
         return newState;
     }
 
@@ -115,10 +116,14 @@ class FiltersActions {
             selectedSubjectType,
             programs,
             selectedPrograms,
+            selectedLocations: [],
+            addressLevelState: new AddressLevelState(),
             encounterTypes,
             selectedEncounterTypes: [],
             generalEncounterTypes,
             selectedGeneralEncounterTypes: [],
+            selectedCustomFilters: [],
+            selectedGenders: [],
         }
     }
 

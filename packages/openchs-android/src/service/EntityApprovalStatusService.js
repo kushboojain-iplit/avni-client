@@ -5,23 +5,32 @@ import {
     ApprovalStatus,
     BaseEntity,
     ChecklistItem,
-    CustomFilter,
     Encounter,
     EntityApprovalStatus,
-    EntityQueue,
+    EntityQueue, Form,
     Individual,
     ProgramEncounter,
     ProgramEnrolment
 } from "openchs-models";
 import _ from 'lodash';
-import {DashboardReportFilter} from "../model/DashboardReportFilters";
-import AddressLevel from "../views/common/AddressLevel";
+import {DashboardReportFilter} from "../model/DashboardReportFilter";
 import RealmQueryService from "./query/RealmQueryService";
 
 function getEntityApprovalStatuses(service, schema, status) {
     return service.getAll(schema)
         .filtered(service.getVoidedQuery(schema))
         .filtered(`latestEntityApprovalStatus.approvalStatus.status = $0`, status);
+}
+
+function getEntityTypeQuery(formMapping, matchingFormTypes, entityTypePath, formMappingEntityTypeUUIDPath) {
+    if (_.isNil(formMapping)) return "uuid <> null";
+    if (matchingFormTypes.includes(formMapping.form.formType)) return `${entityTypePath}.uuid = "${_.get(formMapping, formMappingEntityTypeUUIDPath)}"`;
+    return "uuid = null";
+}
+
+function getChecklistItemQuery(formMapping) {
+    if (_.isNil(formMapping) || formMapping.form.formType === Form.formTypes.ChecklistItem) return "$checklistItem.uuid <> null";
+    return "$checklistItem.uuid = null";
 }
 
 @Service("entityApprovalStatusService")
@@ -46,6 +55,34 @@ class EntityApprovalStatusService extends BaseService {
         return savedStatus;
     }
 
+    getAllSubjects(approvalStatus_status, reportFilters, formMapping) {
+        const {
+            IndividualProfile,
+            ProgramEnrolment,
+            ProgramExit,
+            Encounter,
+            ProgramEncounter,
+            ProgramEncounterCancellation,
+            IndividualEncounterCancellation
+        } = Form.formTypes;
+        const addressFilter = DashboardReportFilter.getAddressFilter(reportFilters);
+        let entities = RealmQueryService.filterBasedOnAddress(Individual.schema.name, this.getAll(Individual.schema.name), addressFilter);
+        entities = entities.filtered(
+            `(latestEntityApprovalStatus.approvalStatus.status = $0 and voided = false and ${getEntityTypeQuery(formMapping, [IndividualProfile], "subjectType", "subjectType.uuid")}) 
+        
+            or (voided = false and subquery(enrolments, $enrolment, $enrolment.latestEntityApprovalStatus.approvalStatus.status = $1 and $enrolment.voided = false and ${getEntityTypeQuery(formMapping, [ProgramEnrolment, ProgramExit], "$enrolment.program", "entityUUID")}).@count > 0)
+              
+            or (voided = false and subquery(encounters, $encounter, $encounter.latestEntityApprovalStatus.approvalStatus.status = $2 and $encounter.voided = false and ${getEntityTypeQuery(formMapping, [Encounter, IndividualEncounterCancellation], "$encounter.encounterType", "observationsTypeEntityUUID")}).@count > 0)
+            
+            or (voided = false and subquery(enrolments.encounters, $encounter, $encounter.programEnrolment.voided = false and $encounter.latestEntityApprovalStatus.approvalStatus.status = $3 and $encounter.voided = false and ${getEntityTypeQuery(formMapping, [ProgramEncounter, ProgramEncounterCancellation], "$encounter.encounterType", "observationsTypeEntityUUID")}).@count > 0)
+            
+            or (voided = false and subquery(enrolments.checklists.items, $checklistItem, $checklistItem.latestEntityApprovalStatus.approvalStatus.status = $4 and ${getChecklistItemQuery(formMapping)}).@count > 0) 
+            
+            SORT(firstName ASC)`,
+            approvalStatus_status, approvalStatus_status, approvalStatus_status, approvalStatus_status, approvalStatus_status);
+        return entities;
+    }
+
     getAllEntitiesForReports(approvalStatus_status, reportFilters) {
         const applicableEntitiesSchema = EntityApprovalStatus.getApprovalEntitiesSchema();
         const result = _.map(applicableEntitiesSchema, (schema) => {
@@ -55,16 +92,6 @@ class EntityApprovalStatusService extends BaseService {
             return {title: schema, data: entities};
         });
         return {status: approvalStatus_status, result};
-    }
-
-    getAllEntitiesWithStatus(status, schema, filterQuery) {
-        const applicableEntitiesSchema = EntityApprovalStatus.getApprovalEntitiesSchema().filter(entity => _.isEmpty(schema) ? true : entity === schema);
-        const result = _.map(applicableEntitiesSchema, (schema) => {
-            let entities = getEntityApprovalStatuses(this, schema, status);
-            entities = _.isEmpty(filterQuery) ? entities : entities.filtered(filterQuery);
-            return {title: schema, data: entities};
-        });
-        return {status, result};
     }
 
     getVoidedQuery(schema) {

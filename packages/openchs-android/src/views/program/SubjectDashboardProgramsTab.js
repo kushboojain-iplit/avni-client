@@ -25,6 +25,9 @@ import Distances from "../primitives/Distances";
 import ObservationsSectionOptions from "../common/ObservationsSectionOptions";
 import Icon from 'react-native-vector-icons/SimpleLineIcons'
 import Separator from "../primitives/Separator";
+import UserInfoService from "../../service/UserInfoService";
+import AvniToast from "../common/AvniToast";
+import {SubjectType} from "openchs-models";
 
 class SubjectDashboardProgramsTab extends AbstractComponent {
     static propTypes = {
@@ -66,13 +69,13 @@ class SubjectDashboardProgramsTab extends AbstractComponent {
 
     editEnrolment(pageNumber) {
         this.dispatchAction(Actions.ON_EDIT_ENROLMENT, {
-            cb: (enrolment, workLists) => CHSNavigator.navigateToProgramEnrolmentView(this, enrolment, workLists, true, pageNumber)
+            continueEnrolmentEdit: (enrolment, workLists) => CHSNavigator.navigateToProgramEnrolmentView(this, enrolment, workLists, true, pageNumber)
         });
     }
 
     editExit(pageNumber) {
         this.dispatchAction(Actions.ON_EDIT_ENROLMENT_EXIT, {
-            cb: (enrolment, workLists) => CHSNavigator.navigateToExitProgram(this, enrolment, workLists, true, pageNumber)
+            continueEditExit: (enrolment, workLists) => CHSNavigator.navigateToExitProgram(this, enrolment, workLists, true, pageNumber)
         });
     }
 
@@ -89,9 +92,8 @@ class SubjectDashboardProgramsTab extends AbstractComponent {
     getHeaderMessage(enrolment) {
         return (
             <View>
-                <Text>{`${this.I18n.t("enrolledOn")} ${moment(enrolment.enrolmentDateTime).format("DD-MM-YYYY")}`}</Text>
                 {!_.isNil(this.state.enrolment.programExitDateTime) &&
-                <Text>{`${this.I18n.t("exitedOn")} ${moment(enrolment.programExitDateTime).format("DD-MM-YYYY")}`}</Text>}
+                    <Text>{`${this.I18n.t("exitedOn")} ${moment(enrolment.programExitDateTime).format("DD-MM-YYYY")}`}</Text>}
                 <Text>{`${this.I18n.t("programName")} ${this.I18n.t(_.get(enrolment, 'program.displayName'))}`}</Text>
             </View>
         )
@@ -143,20 +145,23 @@ class SubjectDashboardProgramsTab extends AbstractComponent {
     }
 
     renderPlannedVisits(allowedEncounterTypeUuids) {
-        const cancelEncounterCriteria = `privilege.name = '${Privilege.privilegeName.cancelVisit}' AND privilege.entityType = '${Privilege.privilegeEntityType.encounter}' AND subjectTypeUuid = '${this.state.enrolment.individual.subjectType.uuid}' AND programUuid = '${this.state.enrolment.program.uuid}'`;
-        const allowedEncounterTypeUuidsForCancelVisit = this.privilegeService.allowedEntityTypeUUIDListForCriteria(cancelEncounterCriteria, 'programEncounterTypeUuid');
-        const programEnrolment = this.state.enrolment;
-        const scheduledEncounters = _.filter(programEnrolment.nonVoidedEncounters(), (encounter) => !encounter.encounterDateTime && !encounter.cancelDateTime);
-        return (<PreviousEncounters encounters={scheduledEncounters}
-                                    allowedEncounterTypeUuidsForCancelVisit={allowedEncounterTypeUuidsForCancelVisit}
-                                    allowedEncounterTypeUuidsForPerformVisit={allowedEncounterTypeUuids}
-                                    formType={Form.formTypes.ProgramEncounter}
-                                    showCount={this.state.showCount}
-                                    showPartial={false}
-                                    title={this.I18n.t('visitsPlanned')}
-                                    emptyTitle={this.I18n.t('noPlannedEncounters')}
-                                    subjectInfo={`${programEnrolment.individual.name}, ${programEnrolment.program.displayName}`}
-                                    expandCollapseView={false}/>);
+        if (this.state.enrolment.individual.subjectType.getSetting(SubjectType.settingKeys.displayPlannedEncounters) !== false) {
+            const cancelEncounterCriteria = `privilege.name = '${Privilege.privilegeName.cancelVisit}' AND privilege.entityType = '${Privilege.privilegeEntityType.encounter}' AND subjectTypeUuid = '${this.state.enrolment.individual.subjectType.uuid}' AND programUuid = '${this.state.enrolment.program.uuid}'`;
+            const allowedEncounterTypeUuidsForCancelVisit = this.privilegeService.allowedEntityTypeUUIDListForCriteria(cancelEncounterCriteria, 'programEncounterTypeUuid');
+            const programEnrolment = this.state.enrolment;
+            const scheduledEncounters = _.filter(programEnrolment.nonVoidedEncounters(), (encounter) => !encounter.encounterDateTime && !encounter.cancelDateTime);
+            return (<PreviousEncounters encounters={scheduledEncounters}
+                                        allowedEncounterTypeUuidsForCancelVisit={allowedEncounterTypeUuidsForCancelVisit}
+                                        allowedEncounterTypeUuidsForPerformVisit={allowedEncounterTypeUuids}
+                                        formType={Form.formTypes.ProgramEncounter}
+                                        showCount={this.state.showCount}
+                                        showPartial={false}
+                                        title={this.I18n.t('visitsPlanned')}
+                                        emptyTitle={this.I18n.t('noPlannedEncounters')}
+                                        subjectInfo={`${programEnrolment.individual.name}, ${programEnrolment.program.displayName}`}
+                                        expandCollapseView={false}
+            />);
+        }
     }
 
     renderCompletedVisits() {
@@ -175,6 +180,7 @@ class SubjectDashboardProgramsTab extends AbstractComponent {
                                     expandCollapseView={true}
                                     onToggleAction={Actions.ON_ENCOUNTER_TOGGLE}
                                     subjectInfo={`${programEnrolment.individual.name}, ${programEnrolment.program.displayName}`}
+                                    onEditEncounterActionName={Actions.ON_EDIT_PROGRAM_ENCOUNTER}
         />);
     }
 
@@ -186,9 +192,9 @@ class SubjectDashboardProgramsTab extends AbstractComponent {
             (<View style={{
                 padding: Distances.ScaledContentDistanceFromEdge,
                 margin: 4,
-                elevation: 2,
-                backgroundColor: Colors.cardBackgroundColor,
-                marginVertical: 16
+                backgroundColor: Styles.greyBackground,
+                marginVertical: 16,
+                borderRadius: 10
             }}>
                 <Text style={[Fonts.MediumBold]}>{this.getExitHeaderMessage(this.state.enrolment)}</Text>
                 <Observations form={this.getExitForm()}
@@ -203,57 +209,72 @@ class SubjectDashboardProgramsTab extends AbstractComponent {
 
     renderSummary() {
         return <View style={{
-            padding: Distances.ScaledContentDistanceFromEdge,
-            margin: 4,
-            elevation: 2,
-            backgroundColor: Colors.cardBackgroundColor,
-            marginVertical: 16
+            marginVertical: 16,
+            borderRadius: 10
         }}>
-            <View>
-                <Text style={Styles.cardTitle}>{this.I18n.t('summary')}</Text>
+            <Text style={[Styles.dashboardSubsectionTitleText, {paddingLeft: 10}]}>{this.I18n.t('summary')}</Text>
+            <View style={{backgroundColor: Styles.greyBackground, paddingVertical: 5, paddingHorizontal: 7}}>
                 {this.getHeaderMessage(this.state.enrolment)}
             </View>
-            <Observations observations={_.defaultTo(this.state.enrolmentSummary, [])}
-                          style={{marginVertical: DGS.resizeHeight(8)}}/>
+            <View style={{backgroundColor: Styles.greyBackground, paddingHorizontal: 7}}>
+                <Observations observations={_.defaultTo(this.state.enrolmentSummary, [])}
+                              style={{marginVertical: DGS.resizeHeight(8)}}/>
+            </View>
         </View>
     }
 
     renderEnrolmentDetails() {
-        const exitPrivilegeCriteria = `privilege.name = '${Privilege.privilegeName.exitEnrolment}' AND privilege.entityType = '${Privilege.privilegeEntityType.enrolment}' AND subjectTypeUuid = '${this.state.enrolment.individual.subjectType.uuid}' AND programUuid = '${this.state.enrolment.program.uuid}'`;
-        const editPrivilegeCriteria = `privilege.name = '${Privilege.privilegeName.editEnrolmentDetails}' AND privilege.entityType = '${Privilege.privilegeEntityType.enrolment}' AND subjectTypeUuid = '${this.state.enrolment.individual.subjectType.uuid}' AND programUuid = '${this.state.enrolment.program.uuid}'`;
+        const {enrolment} = this.state;
+
+        const exitPrivilegeCriteria = `privilege.name = '${Privilege.privilegeName.exitEnrolment}' AND privilege.entityType = '${Privilege.privilegeEntityType.enrolment}' AND subjectTypeUuid = '${this.state.enrolment.individual.subjectType.uuid}' AND programUuid = '${enrolment.program.uuid}'`;
+        const editPrivilegeCriteria = `privilege.name = '${Privilege.privilegeName.editEnrolmentDetails}' AND privilege.entityType = '${Privilege.privilegeEntityType.enrolment}' AND subjectTypeUuid = '${this.state.enrolment.individual.subjectType.uuid}' AND programUuid = '${enrolment.program.uuid}'`;
         const hasExitPrivilege = this.privilegeService.hasActionPrivilegeForCriteria(exitPrivilegeCriteria, 'programUuid');
         const hasEditPrivilege = this.privilegeService.hasActionPrivilegeForCriteria(editPrivilegeCriteria, 'programUuid');
-        return (<View style={{
-            padding: Distances.ScaledContentDistanceFromEdge,
-            margin: 4,
-            elevation: 2,
-            backgroundColor: Colors.cardBackgroundColor,
-            marginVertical: 16
-        }}>
-            <TouchableOpacity onPress={() => this.dispatchAction(Actions.ON_ENROLMENT_TOGGLE)}>
-                <Text style={Styles.cardTitle}>{this.I18n.t('enrolmentDetails')}</Text>
-                <View style={{right: 2, position: 'absolute', alignSelf: 'center'}}>
-                    {this.state.expandEnrolmentInfo === false ?
-                        <Icon name={'arrow-down'} size={12}/> :
-                        <Icon name={'arrow-up'} size={12}/>}
-                </View>
-            </TouchableOpacity>
-            {this.state.expandEnrolmentInfo === true ?
-                <View>
-                    <Observations form={this.getForm()}
-                                  observations={this.state.enrolment.observations}
-                                  style={{marginVertical: DGS.resizeHeight(8)}}
-                                  quickFormEdit={hasEditPrivilege}
-                                  onFormElementGroupEdit={(pageNumber) => this.editEnrolment(pageNumber)}
-                                  />
-                </View> : <View/>}
-            <TouchableOpacity onPress={() => this.dispatchAction(Actions.ON_ENROLMENT_TOGGLE)}>
-                <View style={{paddingTop: 6}}>
-                    <ObservationsSectionOptions contextActions={this.getEnrolmentContextActions(false, hasEditPrivilege)}
-                                                primaryAction={this.getPrimaryEnrolmentContextAction(hasExitPrivilege)}/>
-                </View>
-            </TouchableOpacity>
-        </View>);
+
+        const createdBy = this.getService(UserInfoService).getCreatedBy(enrolment, this.I18n);
+        const createdByMessage = _.isEmpty(createdBy) ? "" : this.I18n.t("by", {user: createdBy});
+
+        return (<View style={{marginTop: 10}}>
+            <Text style={[Styles.dashboardSubsectionTitleText, {paddingLeft: 10}]}>{this.I18n.t('enrolmentDetails')}</Text>
+
+            <View style={{
+                padding: Distances.ScaledContentDistanceFromEdge,
+                margin: 4,
+                backgroundColor: Styles.greyBackground,
+                borderRadius: 10
+            }}>
+                <TouchableOpacity onPress={() => this.dispatchAction(Actions.ON_ENROLMENT_TOGGLE)}>
+
+                    <View style={{flexDirection: 'column'}}>
+                        <Text style={{fontSize: Fonts.Normal}}>{`${this.I18n.t(_.get(enrolment, 'program.displayName'))}`}</Text>
+                        <Text style={{fontSize: Fonts.Small, color: Colors.SecondaryText}}>{`${this.I18n.t("enrolledOn")} ${General.toDisplayDate(enrolment.enrolmentDateTime)} ${createdByMessage}`}</Text>
+                    </View>
+                    <View style={{right: 2, position: 'absolute', alignSelf: 'center'}}>
+                        {this.state.expandEnrolmentInfo === false ?
+                            <Icon name={'arrow-down'} size={12}/> :
+                            <Icon name={'arrow-up'} size={12}/>}
+                    </View>
+                </TouchableOpacity>
+                {this.state.expandEnrolmentInfo === true ?
+                    <View>
+                        <Observations form={this.getForm()}
+                                      observations={this.state.enrolment.observations}
+                                      style={{marginVertical: DGS.resizeHeight(8)}}
+                                      quickFormEdit={hasEditPrivilege}
+                                      onFormElementGroupEdit={(pageNumber) => this.editEnrolment(pageNumber)}
+                        />
+                    </View> : <View/>}
+                <TouchableOpacity onPress={() => this.dispatchAction(Actions.ON_ENROLMENT_TOGGLE)}>
+                    <View style={{paddingTop: 20}}>
+                        <ObservationsSectionOptions
+                            contextActions={this.getEnrolmentContextActions(false, hasEditPrivilege)}
+                            primaryAction={this.getPrimaryEnrolmentContextAction(hasExitPrivilege)}/>
+                    </View>
+                </TouchableOpacity>
+                {this.state.editFormRuleResponse.isEditDisallowed() &&
+                    <AvniToast message={this.I18n.t(this.state.editFormRuleResponse.getMessageKey())}
+                               onAutoClose={() => this.dispatchAction(Actions.ON_EDIT_ERROR_SHOWN)}/>}
+            </View></View>);
     }
 
     render() {
@@ -263,31 +284,30 @@ class SubjectDashboardProgramsTab extends AbstractComponent {
         const performVisitCriteria = this.state.enrolment.program && `privilege.name = '${Privilege.privilegeName.performVisit}' AND privilege.entityType = '${Privilege.privilegeEntityType.encounter}' AND subjectTypeUuid = '${this.state.enrolment.individual.subjectType.uuid}' AND programUuid = '${this.state.enrolment.program.uuid}'` || '';
         const allowedEncounterTypeUuids = this.privilegeService.allowedEntityTypeUUIDListForCriteria(performVisitCriteria, 'programEncounterTypeUuid');
         return (
-            <View style={{backgroundColor: Colors.GreyContentBackground}}>
-                <View style={{backgroundColor: Styles.defaultBackground}}>
+            <View style={{backgroundColor: Colors.WhiteContentBackground}}>
+                <View style={{backgroundColor: Styles.WhiteContentBackground}}>
                 </View>
                 <ScrollView style={{
                     flexDirection: 'column',
                     borderRadius: 5,
                     marginHorizontal: 16,
-                    backgroundColor: Colors.GreyContentBackground
+                    backgroundColor: Colors.WhiteContentBackground
                 }}>
-                    <View style={{marginHorizontal: 8}}>
+                    <View style={{backgroundColor: Styles.whiteColor, borderRadius: 10}}>
                         {this.state.enrolment.individual.voided &&
-                        <Text style={{
-                            fontSize: Fonts.Large,
-                            color: Styles.redColor
-                        }}>{this.I18n.t("thisIndividualHasBeenVoided")}</Text>
+                            <Text style={{
+                                fontSize: Fonts.Large,
+                                color: Styles.redColor
+                            }}>{this.I18n.t("thisIndividualHasBeenVoided")}</Text>
                         }
-                        <Text style={{
-                            fontSize: Fonts.Large,
-                            color: Colors.InputNormal
-                        }}>{this.I18n.t('programList')}</Text>
+                        <Text
+                            style={[Styles.dashboardSubsectionTitleText, {paddingLeft: 10}]}>{this.I18n.t('programList')}</Text>
                         <View style={{
                             flex: 2,
                             flexDirection: 'row',
                             justifyContent: 'space-between',
-                            alignItems: 'stretch'
+                            alignItems: 'stretch',
+                            borderRadius: 10
                         }}>
                             <View style={{justifyContent: 'flex-start', flex: 1}}>
                                 <ProgramList enrolments={enrolments}
@@ -313,7 +333,7 @@ class SubjectDashboardProgramsTab extends AbstractComponent {
                         <View/>
                     )}
                 </ScrollView>
-                <Separator height={110} backgroundColor={Colors.GreyContentBackground}/>
+                <Separator height={110} backgroundColor={Colors.WhiteContentBackground}/>
             </View>
         );
     }
